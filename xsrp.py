@@ -64,12 +64,3 @@ class XSrp(ABC):
                                            temporal_features,
                                            fs):
         pass
-
-
-class GridCell:
-    def __init__(self, position, likelihood=None):
-        self.position = position
-        self.likelihood = likelihood
-
-    def set_likelihood(self, value):
-        self.likelihood = value
