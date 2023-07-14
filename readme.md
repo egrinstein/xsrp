@@ -1,4 +1,4 @@
-# XSRP: eXtensible Steered Response Power
+# XsrP: eXtensible Steered Response Power
 
 This repository contains the code for the paper:
 
@@ -9,8 +9,8 @@ source localization**
 
 ## We implemented the following methods:
 
-- Conventional SRP-PHAT in the time domain as described by Dibiase et al. [1]
-- Conventional SRP-PHAT in the frequency domain as described by Dibiase et al. [1]
+- Conventional srP-PHAT in the time domain as described by Dibiase et al. [1]
+- Conventional srP-PHAT in the frequency domain as described by Dibiase et al. [1]
 
 
 

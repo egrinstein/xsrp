@@ -28,9 +28,10 @@ def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True):
     x_corr = correlation_lags(n_samples, n_samples)
     x_central = x_corr[len(x_corr)//2-n_central_bins//2:len(x_corr)//2+n_central_bins//2]
 
-    cross_correlation_matrix = np.zeros((n_signals, n_signals, n_central_bins))
+    cross_correlation_matrix = []
 
     for i in range(n_signals):
+        cross_correlation_matrix.append([])
         for j in range(n_signals):
             corr = correlate(signals[i], signals[j])
             corr = corr[len(corr)//2-n_central_bins//2:len(corr)//2+n_central_bins//2]
@@ -38,7 +39,9 @@ def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True):
             if abs:
                 corr = np.abs(corr)
             
-            cross_correlation_matrix[i, j] = corr
+            cross_correlation_matrix[i].append(corr)
+
+    cross_correlation_matrix = np.array(cross_correlation_matrix)
 
     if return_lags:
         return cross_correlation_matrix, x_central

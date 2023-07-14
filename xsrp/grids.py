@@ -1,16 +1,32 @@
+from typing import Any, Union
 import numpy as np
 
 
-class GridCell:
-    def __init__(self, position, likelihood=None):
-        self.position = position
-        self.likelihood = likelihood
+class Grid:
+    def __init__(self, positions: np.array):
+        self.positions = positions
 
-    def set_likelihood(self, value):
-        self.likelihood = value
+    def __iter__(self):
+        flattened_positions = self.positions.reshape(-1, self.positions.shape[-1])
+
+        for position in flattened_positions:
+            yield position
+
+    def __getitem__(self, key):
+        position = self.positions[key]
+        return position
     
+    def __setitem__(self, key, value):
+        self.positions[key] = value
 
-class UniformCartesianGrid:
+    def asarray(self):
+        return self.positions.reshape(-1, self.positions.shape[-1])
+
+    def __len__(self):
+        return np.prod(self.positions.shape[:-1])
+
+
+class UniformCartesianGrid(Grid):
     """Create an uniform cartesian grid in 2D or 3D for a cuboid shaped room
     """
 
@@ -23,14 +39,15 @@ class UniformCartesianGrid:
         self.bounds = np.array(bounds)
         self.n_grid_cells_per_dim = n_grid_cells_per_dim
 
-        self._create_grid()
-    
+        positions = self._create_grid()
+
+        super().__init__(positions)
+
     def _create_grid(self):
         self.grid_shape = [self.n_grid_cells_per_dim] * len(self.bounds) + [len(self.bounds)]
 
-        self.positions = np.zeros(self.grid_shape)
-        self.likelihoods = np.ones(self.grid_shape[:-1]) / np.prod(self.grid_shape[:-1])
-
+        positions = np.zeros(self.grid_shape)
+     
         cell_resolution = self.bounds / (self.n_grid_cells_per_dim)
         start_position = cell_resolution / 2
 
@@ -39,35 +56,23 @@ class UniformCartesianGrid:
         for i, x in enumerate(xrange):
             for j, y in enumerate(yrange):
                 if len(self.bounds) == 2: # 2D
-                    self.positions[i, j] = np.array([x, y])
+                    positions[i, j] = np.array([x, y])
                 elif len(self.bounds) == 3: # 3D
                     zrange = np.linspace(start_position[2], self.bounds[2] - start_position[2], self.n_grid_cells_per_dim)
                     for k, z in enumerate(zrange):
-                        self.positions[i, j, k] = np.array([x, y, z])
+                        positions[i, j, k] = np.array([x, y, z])
     
-    def set_likelihoods(self, likelihoods):
-        self.likelihoods = likelihoods
+        return positions
 
-    def __iter__(self):
-        flattened_positions = self.positions.reshape(-1, len(self.bounds))
-        flattened_likelihoods = self.likelihoods.flatten()
-
-        for position, likelihood in zip(flattened_positions, flattened_likelihoods):
-            yield GridCell(position, likelihood)
-
-    def __getitem__(self, key):
-        position = self.positions[key]
-        likelihood = self.likelihoods[key]
-        return GridCell(position, likelihood)
-
-
-class UniformAngularGrid:
+class UniformSphericalGrid(Grid):
     def __init__(self, n_azimuth_cells, n_elevation_cells=0):
         self.n_azimuth_cells = n_azimuth_cells
         self.n_elevation_cells = n_elevation_cells
 
-        self._create_grid()
-    
+        positions = self._create_grid()
+
+        super().__init__(positions)
+
     def _create_grid(self):
 
         if self.n_elevation_cells == 0:
@@ -75,30 +80,16 @@ class UniformAngularGrid:
         else:
             self.grid_shape = np.array([self.n_azimuth_cells, self.n_elevation_cells, 3])
 
-        self.positions = np.zeros(self.grid_shape)
-        self.likelihoods = np.ones(self.grid_shape[:-1]) / np.prod(self.grid_shape[:-1])
+        positions = np.zeros(self.grid_shape)
 
         azimuth_range = np.linspace(0, 2 * np.pi, self.n_azimuth_cells, endpoint=False)
         if self.n_elevation_cells == 0:
             for i, azimuth in enumerate(azimuth_range):
-                self.positions[i] = np.array([np.cos(azimuth), np.sin(azimuth)])
+                positions[i] = np.array([np.cos(azimuth), np.sin(azimuth)])
         else:
             elevation_range = np.linspace(0, np.pi, self.n_elevation_cells, endpoint=False)
             for i, azimuth in enumerate(azimuth_range):
                 for j, elevation in enumerate(elevation_range):
-                    self.positions[i, j] = np.array([np.cos(azimuth) * np.sin(elevation), np.sin(azimuth) * np.sin(elevation), np.cos(elevation)])
+                    positions[i, j] = np.array([np.cos(azimuth) * np.sin(elevation), np.sin(azimuth) * np.sin(elevation), np.cos(elevation)])
 
-    def set_likelihoods(self, likelihoods):
-        self.likelihoods = likelihoods
-
-    def __getitem__(self, key):
-        position = self.positions[key]
-        likelihood = self.likelihoods[key]
-        return GridCell(position, likelihood)
-
-    def __iter__(self):
-        flattened_positions = self.positions.reshape(-1, self.positions.shape[-1])
-        flattened_likelihoods = self.likelihoods.flatten()
-
-        for position, likelihood in zip(flattened_positions, flattened_likelihoods):
-            yield GridCell(position, likelihood)
+        return positions

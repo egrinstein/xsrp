@@ -2,23 +2,56 @@ import numpy as np
 import os
 
 from visualization.spatial_mappers import (
-    plot_temporal_spatial_mapper,
+    plot_pairwise_mapper,
 )
 from grids import (
     UniformCartesianGrid,
 )
-from spatial_mappers import temporal_spatial_mapper
+from spatial_mappers import (
+    tdoa_mapper,
+    integer_sample_mapper,
+    fractional_sample_mapper
+)
 
-
-def test_plot_spatial_mapper_2d():
+def test_plot_tdoa_mapper_2d():
     os.makedirs("tests/temp", exist_ok=True)
 
-    grid = UniformCartesianGrid((10, 10), 5)
+    grid = UniformCartesianGrid((10, 10), 100)
 
     microphone_positions = np.array([[2.5, 2.5], [7.5, 7.5]])
 
-    mapper = temporal_spatial_mapper(grid, microphone_positions)
+    mapper = tdoa_mapper(grid, microphone_positions)
 
-    plot_temporal_spatial_mapper(grid, mapper,
+    plot_pairwise_mapper(grid, mapper,
                                  microphone_positions,
-                                 output_path="tests/temp/plot_spatial_mapper_2d.png")
+                                 output_path="tests/temp/tdoa_mapper_2d.png")
+
+
+def test_plot_integer_sample_mapper_2d():
+    os.makedirs("tests/temp", exist_ok=True)
+
+    grid = UniformCartesianGrid((10, 10), 100)
+
+    microphone_positions = np.array([[2.5, 2.5], [2.6, 2.6]])
+
+    mapper = integer_sample_mapper(grid, microphone_positions, 16000)
+
+    plot_pairwise_mapper(grid, mapper,
+                     microphone_positions,
+                     output_path="tests/temp/integer_sample_mapper_2d.png",
+                     unit="samples")
+
+
+def test_plot_fractional_sample_mapper_2d():
+    os.makedirs("tests/temp", exist_ok=True)
+
+    grid = UniformCartesianGrid((10, 10), 100)
+
+    microphone_positions = np.array([[2.5, 2.5], [2.6, 2.6]])
+
+    mapper = fractional_sample_mapper(grid, microphone_positions, 16000)
+
+    plot_pairwise_mapper(grid, mapper,
+                     microphone_positions,
+                     output_path="tests/temp/fractional_sample_mapper_2d.png",
+                     unit="samples")

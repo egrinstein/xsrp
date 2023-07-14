@@ -1,14 +1,15 @@
+import numpy as np
 import os
+import pyroomacoustics as pra
 
-from visualization.grid import (
+from visualization.grids import (
     plot_uniform_cartesian_grid,
     #plot_uniform_angular_grid
 )
 from grids import (
     UniformCartesianGrid,
-    UniformAngularGrid
+    UniformSphericalGrid
 )
-
 
 def test_plot_uniform_cartesian_grid_3d():
     os.makedirs("tests/temp", exist_ok=True)
@@ -27,12 +28,12 @@ def test_plot_uniform_cartesian_grid_2d():
 def test_plot_uniform_angular_grid_1d():
     os.makedirs("tests/temp", exist_ok=True)
 
-    grid = UniformAngularGrid(90)
+    grid = UniformSphericalGrid(90)
     plot_uniform_cartesian_grid(grid, [[-1, 1], [-1, 1]], output_path="tests/temp/plot_angular_grid_1d.png")
 
 
 def test_plot_uniform_angular_grid_2d():
     os.makedirs("tests/temp", exist_ok=True)
 
-    grid = UniformAngularGrid(30, 10)
+    grid = UniformSphericalGrid(30, 10)
     plot_uniform_cartesian_grid(grid, [[-1, 1], [-1, 1], [-1, 1]], output_path="tests/temp/plot_angular_grid_2d.png")

@@ -31,7 +31,7 @@ def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
         x_central = x_central/sr*1000 # Convert to ms
 
     n_pairs = n_signals*(n_signals - 1)//2
-    fig, axs = plt.subplots(nrows=n_pairs, figsize=(10, 5))
+    fig, axs = plt.subplots(nrows=n_pairs, figsize=(5, 2*n_pairs))
 
     if n_pairs == 1:
         axs = np.expand_dims(axs, axis=0)
