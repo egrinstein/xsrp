@@ -3,7 +3,8 @@ import numpy as np
 import warnings
 
 
-def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None, mic_positions=None):
+def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None,
+                                mic_positions=None, source_positions=None):
     dims = np.array(dims)
     n_dims = len(dims)
 
@@ -42,6 +43,10 @@ def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None, mic_
     if mic_positions is not None:
         ax.scatter(*[mic_positions[:,i] for i in range(n_dims)], marker="^", color="red", label="Mic. positions")
         ax.legend()
+    if source_positions is not None:
+        ax.scatter(*[source_positions[:,i] for i in range(n_dims)], marker="x", color="orange", label="Source positions")
+        ax.legend()
+    
 
     if output_path is None:
         plt.show()

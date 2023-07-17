@@ -97,7 +97,10 @@ def integer_sample_mapper(grid: Grid, microphone_positions: np.array, sr: float)
     mapper : np.array (n_candidate_positions, n_microphones, n_microphones) 
     """
 
-    return np.round(fractional_sample_mapper(grid, microphone_positions, sr)).astype(int)
+    fractional_mapper = fractional_sample_mapper(grid, microphone_positions, sr)
+    integer_mapper = np.ceil(fractional_mapper).astype(int)
+    
+    return integer_mapper
 
 
 def _compute_theoretical_tdoa(candidate_grid, mic_0, mic_1, c=343.0):
@@ -123,8 +126,8 @@ def _compute_theoretical_tdoa(candidate_grid, mic_0, mic_1, c=343.0):
         The theoretical TDOA between the candidate grid and the microphone pair.
     """
 
-    
-    tof_0 = np.linalg.norm(candidate_grid - mic_0, axis=1)/c
-    tof_1 = np.linalg.norm(candidate_grid - mic_1, axis=1)/c
+    tof_0 = np.linalg.norm(candidate_grid - mic_0, axis=-1)/c
+    tof_1 = np.linalg.norm(candidate_grid - mic_1, axis=-1)/c
+    tdoa = tof_0 - tof_1
 
-    return tof_1 - tof_0
+    return tdoa
