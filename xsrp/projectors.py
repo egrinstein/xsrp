@@ -55,14 +55,19 @@ def average_sample_projector(grid: Grid,
                 n_left_neighbours = int(np.floor(n_average_samples/2))
                 n_right_neighbours = int(np.ceil(n_average_samples/2))
 
-                # Get the cross-correlation values of the neighbouring samples
-                cross_correlation_values = cross_correlation_ij[
-                    int(cross_correlation_idx - n_left_neighbours):
-                    int(cross_correlation_idx + n_right_neighbours)
-                ]
 
-                # Average the cross-correlation values
-                cross_correlation_value = cross_correlation_values.mean()
+                if n_left_neighbours + n_right_neighbours == 1:
+                    # If only one neighbour is needed, only use interpolation
+                    cross_correlation_value = _parabolic_interpolation(cross_correlation_idx, cross_correlation_ij)
+                else:
+                    # Get the cross-correlation values of the neighbouring samples
+                    cross_correlation_values = cross_correlation_ij[
+                        int(cross_correlation_idx - n_left_neighbours):
+                        int(cross_correlation_idx + n_right_neighbours)
+                    ]
+
+                    # Average the cross-correlation values
+                    cross_correlation_value = cross_correlation_values.mean()
 
                 if sum_pairs:
                     srp_map[n_cell] += cross_correlation_value
@@ -106,6 +111,7 @@ def frequency_projector(grid: Grid, spatial_mapper: np.array,
         #srp_map = srp_map.sum(axis=1).sum(axis=1)[:, 2]
         srp_map = srp_map.sum(axis=1).sum(axis=1).sum(axis=1)
     return np.abs(srp_map)
+
 
 def _parabolic_interpolation(x_value, y):
     """Compute the parabolic interpolation of the given x_value by

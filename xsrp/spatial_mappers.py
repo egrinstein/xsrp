@@ -130,8 +130,6 @@ def frequency_delay_mapper(candidate_grid, microphone_positions: np.array, freqs
     mapper : np.array (n_candidate_positions, n_microphones, n_microphones, n_frequencies) 
     """
 
-    n_freqs = 2*(len(freqs) - 1)
-
     mapper = tdoa_mapper(candidate_grid, microphone_positions)[..., np.newaxis]
     # mapper.shape == (n_candidate_positions, n_microphones, n_microphones, 1)
     mapper = np.repeat(mapper, len(freqs), axis=-1)

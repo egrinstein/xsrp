@@ -20,7 +20,7 @@ class XSrp(ABC):
         if room_dims is None:
             room_dims = self.room_dims
         
-        if mic_positions is None or room_dims is None:
+        if mic_positions is None:
             raise ValueError(
                 """
                 mic_positions and room_dims must be specified
