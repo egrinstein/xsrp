@@ -103,11 +103,49 @@ def integer_sample_mapper(grid: Grid, microphone_positions: np.array, sr: float)
     return integer_mapper
 
 
+def frequency_delay_mapper(candidate_grid, microphone_positions: np.array, freqs: np.array):
+    """Create a frequency delay mapper for the given grid.
+
+    This map associates a a complex value exp(j*f*tau) for each grid cell and microphone pair, where
+    f is a frequency band being analyzed and tau is the theoretical TDOA between the grid cell and the
+    microphone pair.
+
+    Parameters
+    ----------
+    grid : Grid
+        The grid of candidate positions to create the temporal-spatial mapper for.
+        The grid is of shape 2D (n_points, 2/3)
+    
+    microphone_positions : np.array (n_microphones, n_dimensions)
+        The positions of the microphones.    
+    
+    freqs : np.array (n_frequencies)
+        The frequencies of the signals.
+        
+    c : float
+        The speed of sound. Defaults to 343.0 m/s.
+
+    Returns
+    -------
+    mapper : np.array (n_candidate_positions, n_microphones, n_microphones, n_frequencies) 
+    """
+
+    n_freqs = 2*(len(freqs) - 1)
+
+    mapper = tdoa_mapper(candidate_grid, microphone_positions)[..., np.newaxis]
+    # mapper.shape == (n_candidate_positions, n_microphones, n_microphones, 1)
+    mapper = np.repeat(mapper, len(freqs), axis=-1)
+    # mapper.shape == (n_candidate_positions, n_microphones, n_microphones, n_frequencies)
+    mapper[..., :] *= freqs[np.newaxis, np.newaxis, np.newaxis, :]
+    # mapper.shape == (n_candidate_positions, n_microphones, n_microphones, n_frequencies)
+    mapper = np.exp(2j*mapper*np.pi)
+    return mapper
+
+
 def _compute_theoretical_tdoa(candidate_grid, mic_0, mic_1, c=343.0):
     """Compute the theoretical TDOA between a grid of candidate positions and a microphone pair.
     The TDOA is computed as the difference between the Time of Flight (TOF) of the candidate position
     to the first microphone and the TOF of the candidate position to the second microphone.
-    
 
     Parameters
     ----------

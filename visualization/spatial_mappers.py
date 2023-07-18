@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from grids import Grid
+from xsrp.grids import Grid
+
 
 def plot_pairwise_mapper(grid: Grid, mapper, microphone_positions=None, output_path=None, unit="s"):
     """Plot a spatial mapper.

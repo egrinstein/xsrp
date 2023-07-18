@@ -4,10 +4,10 @@ import os
 from visualization.spatial_mappers import (
     plot_pairwise_mapper,
 )
-from grids import (
+from xsrp.grids import (
     UniformCartesianGrid,
 )
-from spatial_mappers import (
+from xsrp.spatial_mappers import (
     tdoa_mapper,
     integer_sample_mapper,
     fractional_sample_mapper

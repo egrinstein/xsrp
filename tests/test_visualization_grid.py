@@ -6,7 +6,7 @@ from visualization.grids import (
     plot_uniform_cartesian_grid,
     #plot_uniform_angular_grid
 )
-from grids import (
+from xsrp.grids import (
     UniformCartesianGrid,
     UniformSphericalGrid
 )

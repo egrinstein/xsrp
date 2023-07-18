@@ -6,7 +6,7 @@ from visualization.cross_correlation import (
     plot_cross_correlation
 )
 
-from signal_features.gcc_phat import gcc_phat
+from xsrp.signal_features.gcc_phat import gcc_phat
 
 
 def test_visualize_gcc_phat_time():

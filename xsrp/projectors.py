@@ -7,12 +7,11 @@ from .grids import Grid
 
 
 def average_sample_projector(grid: Grid,
-                     spatial_mapper: np.array,
-                     cross_correlation_matrix: np.array,
-                     sum_pairs: bool = True,
-                     n_average_samples: int = 1):
+                             spatial_mapper: np.array,
+                             cross_correlation_matrix: np.array,
+                             sum_pairs: bool = True,
+                             n_average_samples: int = 1):
     """
-    
     Creates a Steered Response Power (SRP) likelihood map by associating
     a cross-correlation value for each grid cell with the
     corresponding spatial location.
@@ -40,10 +39,7 @@ def average_sample_projector(grid: Grid,
     lags = correlation_lags(n_samples/2, n_samples/2)
     lag_idxs = range(len(lags))
     lag_to_idx = interp1d(lags, lag_idxs, kind="linear")
-    
-    # if sum_pairs:
-    #     srp_map = np.zeros(len(grid))
-    # else:
+
     srp_map = np.zeros((len(grid), n_mics, n_mics))
 
     # Loop over the cells
@@ -74,10 +70,42 @@ def average_sample_projector(grid: Grid,
                     srp_map[n_cell, i, j] = cross_correlation_value
 
     if sum_pairs:
+        # Sum the cross-correlation values of each microphone pair
         srp_map = srp_map.sum(axis=1).sum(axis=1)
 
     return srp_map
 
+
+def frequency_projector(grid: Grid, spatial_mapper: np.array,
+                        cross_correlation_matrix: np.array,
+                        sum_pairs: bool = True):
+    """
+    Creates a Steered Response Power (SRP) likelihood map by steering the frequency domain
+    cross-correlation between microphone pairs to the corresponding grid cell and frequency bin.    
+
+    Args:
+        grid (Grid): Grid object of n_cells
+        spatial_mapper (np.array): Array of shape (n_cells, n_mics, n_mics)
+        cross_correlation_matrix (np.array): Array of cross-correlation values
+            of shape (n_mics, n_mics, n_frequencies)
+        sum_pairs (bool, optional): Whether to sum the cross-correlation values
+            of each microphone pair and frequency. Defaults to True.
+
+    Returns:
+        srp_map (np.array): Array of shape (n_cells, n_mics, n_mics) if sum_pairs
+            is False, else array of shape (n_cells,)
+    """
+
+    n_mics = spatial_mapper.shape[1]
+    n_frequencies = cross_correlation_matrix.shape[-1]
+
+    srp_map = cross_correlation_matrix[np.newaxis] * spatial_mapper
+
+    if sum_pairs:
+        # Sum the cross-correlation values of each microphone pair and frequency
+        #srp_map = srp_map.sum(axis=1).sum(axis=1)[:, 2]
+        srp_map = srp_map.sum(axis=1).sum(axis=1).sum(axis=1)
+    return np.abs(srp_map)
 
 def _parabolic_interpolation(x_value, y):
     """Compute the parabolic interpolation of the given x_value by

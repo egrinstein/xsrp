@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import warnings
 
 
 def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None,
-                                mic_positions=None, source_positions=None):
+                                mic_positions=None, source_positions=None,
+                                ax=None):
     dims = np.array(dims)
     n_dims = len(dims)
 
@@ -12,13 +12,12 @@ def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None,
 
     points = np.array(points)
 
-    fig = plt.figure()
-    if n_dims == 2:
-        ax = fig.add_subplot(111)
-    elif n_dims == 3:
-        ax = fig.add_subplot(111, projection="3d")
-        ax.set_zlabel("Height (m)")
-
+    show = False
+    if ax is None:
+        show = True
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d' if n_dims == 3 else None)
+    
     ax.set_xlabel("Width (m)")
     ax.set_ylabel("Length (m)")
 
@@ -49,6 +48,9 @@ def plot_uniform_cartesian_grid(grid, dims, output_path=None, srp_map=None,
     
 
     if output_path is None:
-        plt.show()
+        if show:
+            plt.show()
     else:
         plt.savefig(output_path)
+
+    return ax

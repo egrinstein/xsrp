@@ -5,15 +5,17 @@ from .xsrp import XSrp
 from .grids import (
     UniformSphericalGrid, UniformCartesianGrid
 )
-from .spatial_mappers import (
-    integer_sample_mapper,
-    fractional_sample_mapper
-)
 from .signal_features.cross_correlation import cross_correlation
 from .signal_features.gcc_phat import gcc_phat
 
+from .spatial_mappers import (
+    integer_sample_mapper,
+    fractional_sample_mapper,
+    frequency_delay_mapper
+)
 from .projectors import (
-    average_sample_projector
+    average_sample_projector,
+    frequency_projector
 )
 from .grid_search import (
     argmax_grid_searcher
@@ -39,13 +41,22 @@ class ConventionalSrp(XSrp):
         specified when calling the forward method. Defaults to None.
     c : float, optional
         The speed of sound. Defaults to 343.
-
+    mode : str, optional
+        The mode of the algorithm. Must be one of 'gcc_phat_freq', 'gcc_phat_time', 'cross_correlation'.
+        Defaults to 'gcc_phat_time'.
+    interpolation : bool, optional
+        Whether to use fractional sample interpolation. Defaults to False.
+    n_average_samples : int, optional
+        The number of cross-correlation samples to average over. Defaults to 1.
+        
     """
     
     def __init__(self, fs: float, grid_type, n_grid_cells,
                  mic_positions=None, room_dims=None, c=343,
                  mode="gcc_phat_time",
-                 interpolation=False):
+                 interpolation=False,
+                 n_average_samples=1,
+                 n_dft_bins=1024):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
@@ -61,9 +72,10 @@ class ConventionalSrp(XSrp):
         
         self.mode = mode
         self.interpolation = interpolation
+        self.n_average_samples = n_average_samples
+        self.n_dft_bins = n_dft_bins
 
         super().__init__(fs, mic_positions, room_dims, c)
-
     
     def create_initial_candidate_grid(self, room_dims):
         if self.grid_type in ["2D", "3D"]:
@@ -73,24 +85,36 @@ class ConventionalSrp(XSrp):
         elif self.grid_type == "doa_2D":
             return UniformSphericalGrid(self.n_grid_cells, self.n_grid_cells)
 
-    def create_spatial_mapper(self, mic_positions, candidate_grid):
-        if self.interpolation:
-            return fractional_sample_mapper(candidate_grid, mic_positions, self.fs)
-        else:
-            return integer_sample_mapper(candidate_grid, mic_positions, self.fs)
-
     def compute_signal_features(self, mic_signals):
         if self.mode == "cross_correlation":
             return cross_correlation(mic_signals, abs=True, return_lags=False)
         elif self.mode == "gcc_phat_time":
             return gcc_phat(mic_signals, abs=True, return_lags=False, ifft=True)
+        elif self.mode == "gcc_phat_freq":
+            return gcc_phat(mic_signals, abs=True, return_lags=False, ifft=False,
+                            n_dft_bins=self.n_dft_bins)
+
+    def create_spatial_mapper(self, mic_positions, candidate_grid):
+        if self.mode == "gcc_phat_freq":
+            dft_bins = np.linspace(0, self.fs/2, self.n_dft_bins//2 + 1)
+            return frequency_delay_mapper(candidate_grid, mic_positions, dft_bins)
+        else:
+            if self.interpolation:
+                return fractional_sample_mapper(candidate_grid, mic_positions, self.fs)
+            else:
+                return integer_sample_mapper(candidate_grid, mic_positions, self.fs)
 
     def project_features(self,
                          candidate_grid,
                          spatial_mapper,
                          signal_features):
-        
-        return average_sample_projector(candidate_grid, spatial_mapper, signal_features, n_average_samples=15)
+        if self.mode == "gcc_phat_freq":
+            return frequency_projector(
+                candidate_grid, spatial_mapper,
+                signal_features)
+        return average_sample_projector(
+            candidate_grid, spatial_mapper,
+            signal_features, n_average_samples=self.n_average_samples)
         
     def grid_search(self, candidate_grid, srp_map, estimated_positions):
         estimated_positions = argmax_grid_searcher(candidate_grid, srp_map)
