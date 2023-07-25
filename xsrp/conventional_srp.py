@@ -105,15 +105,14 @@ class ConventionalSrp(XSrp):
                 return integer_sample_mapper(candidate_grid, mic_positions, self.fs)
 
     def project_features(self,
-                         candidate_grid,
                          spatial_mapper,
                          signal_features):
         if self.mode == "gcc_phat_freq":
             return frequency_projector(
-                candidate_grid, spatial_mapper,
+                spatial_mapper,
                 signal_features)
         return average_sample_projector(
-            candidate_grid, spatial_mapper,
+            spatial_mapper,
             signal_features, n_average_samples=self.n_average_samples)
         
     def grid_search(self, candidate_grid, srp_map, estimated_positions):

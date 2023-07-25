@@ -32,13 +32,12 @@ class XSrp(ABC):
 
         estimated_positions = np.array([])
 
-        spatial_mapper = self.create_spatial_mapper(mic_positions, candidate_grid)
-
         signal_features = self.compute_signal_features(mic_signals)
 
         while True:
+            spatial_mapper = self.create_spatial_mapper(mic_positions, candidate_grid)
             srp_map = self.project_features(
-                candidate_grid, spatial_mapper, signal_features
+                spatial_mapper, signal_features
             )
 
             estimated_positions, new_candidate_grid = self.grid_search(
@@ -53,6 +52,10 @@ class XSrp(ABC):
         return estimated_positions, srp_map, candidate_grid
     
     @abstractmethod
+    def compute_signal_features(self, mic_signals):
+        pass
+
+    @abstractmethod
     def create_initial_candidate_grid(self, room_dims):
         pass
 
@@ -60,13 +63,9 @@ class XSrp(ABC):
     def create_spatial_mapper(self, mic_positions, candidate_grid):
         pass
 
-    @abstractmethod
-    def compute_signal_features(self, mic_signals):
-        pass
 
     @abstractmethod
     def project_features(self,
-                         candidate_grid,
                          spatial_mapper,
                          signal_features):
         pass

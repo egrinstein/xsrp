@@ -6,8 +6,7 @@ from scipy.interpolate import interp1d
 from .grids import Grid
 
 
-def average_sample_projector(grid: Grid,
-                             spatial_mapper: np.array,
+def average_sample_projector(spatial_mapper: np.array,
                              cross_correlation_matrix: np.array,
                              sum_pairs: bool = True,
                              n_average_samples: int = 1):
@@ -40,10 +39,10 @@ def average_sample_projector(grid: Grid,
     lag_idxs = range(len(lags))
     lag_to_idx = interp1d(lags, lag_idxs, kind="linear")
 
-    srp_map = np.zeros((len(grid), n_mics, n_mics))
+    srp_map = np.zeros_like(spatial_mapper, dtype=float)
 
     # Loop over the cells
-    for n_cell in range(len(grid)):
+    for n_cell in range(len(spatial_mapper)):
         # Loop over the microphone pairs
         for i in range(n_mics):
             for j in range(i + 1, n_mics):
@@ -81,7 +80,7 @@ def average_sample_projector(grid: Grid,
     return srp_map
 
 
-def frequency_projector(grid: Grid, spatial_mapper: np.array,
+def frequency_projector(spatial_mapper: np.array,
                         cross_correlation_matrix: np.array,
                         sum_pairs: bool = True):
     """
@@ -89,7 +88,6 @@ def frequency_projector(grid: Grid, spatial_mapper: np.array,
     cross-correlation between microphone pairs to the corresponding grid cell and frequency bin.    
 
     Args:
-        grid (Grid): Grid object of n_cells
         spatial_mapper (np.array): Array of shape (n_cells, n_mics, n_mics)
         cross_correlation_matrix (np.array): Array of cross-correlation values
             of shape (n_mics, n_mics, n_frequencies)
