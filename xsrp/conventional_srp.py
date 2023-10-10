@@ -56,7 +56,8 @@ class ConventionalSrp(XSrp):
                  mode="gcc_phat_time",
                  interpolation=False,
                  n_average_samples=1,
-                 n_dft_bins=1024):
+                 n_dft_bins=1024,
+                 freq_cutoff_in_hz=None):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
@@ -66,6 +67,8 @@ class ConventionalSrp(XSrp):
                     ["gcc_phat_freq", "gcc_phat_time", "cross_correlation"]
                 )
             )
+    
+        freq_cutoff_in_hz = freq_cutoff_in_hz or fs//2
         
         self.grid_type = grid_type
         self.n_grid_cells = n_grid_cells
@@ -74,6 +77,7 @@ class ConventionalSrp(XSrp):
         self.interpolation = interpolation
         self.n_average_samples = n_average_samples
         self.n_dft_bins = n_dft_bins
+        self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
 
         super().__init__(fs, mic_positions, room_dims, c)
     
@@ -110,7 +114,8 @@ class ConventionalSrp(XSrp):
         if self.mode == "gcc_phat_freq":
             return frequency_projector(
                 spatial_mapper,
-                signal_features)
+                signal_features,
+                freq_cutoff=self.freq_cutoff)
         return average_sample_projector(
             spatial_mapper,
             signal_features, n_average_samples=self.n_average_samples)

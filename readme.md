@@ -1,4 +1,4 @@
-# XsrP: eXtensible Steered Response Power
+# XSRP: eXtensible Steered Response Power
 
 This repository contains the code for the paper:
 
@@ -16,3 +16,17 @@ source localization**
 - A simple Volumetric SRP approach which projects the average of N-closest correlation values instead of only the one associated with the microphone pair's Time Difference of Arrival (TDOA)
 - Grid creation functions for Positional Source Localization and Direction of Arrival (DOA) Estimation
 - Visualization tools
+
+## Installation
+
+We recommend installing a [Conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html) virtual environment using the provided `environment.yml` file. This will install all the required dependencies. Change directory to the ```xsrp``` folder and run the following commands:
+
+1. conda env create -f environment.yml
+2. conda activate xsrp
+
+You can then optionally run the tests to verify that everything is working correctly:
+
+3. python -m pytest tests
+
+You may want to check the images that were generated in the ```tests/temp``` folder.
+

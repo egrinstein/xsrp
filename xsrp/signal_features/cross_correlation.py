@@ -3,7 +3,7 @@ import numpy as np
 from scipy.signal import correlate, correlation_lags
 
 
-def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True):
+def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True, normalize=True):
     """Compute the cross-correlation between two or more signals.
     
     Parameters
@@ -42,6 +42,9 @@ def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True):
             cross_correlation_matrix[i].append(corr)
 
     cross_correlation_matrix = np.array(cross_correlation_matrix)
+
+    if normalize:
+        cross_correlation_matrix = cross_correlation_matrix/np.max(np.abs(cross_correlation_matrix))
 
     if return_lags:
         return cross_correlation_matrix, x_central

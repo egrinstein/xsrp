@@ -8,7 +8,7 @@ from scipy.signal import find_peaks
 
 def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
                            n_central_bins=None, lags=None, output_path="",
-                           sr=None):
+                           sr=None, axs=None, label=None):
     """Plot the cross-correlation function between two or more signals.
     
     Parameters
@@ -31,8 +31,11 @@ def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
         x_central = x_central/sr*1000 # Convert to ms
 
     n_pairs = n_signals*(n_signals - 1)//2
-    fig, axs = plt.subplots(nrows=n_pairs, figsize=(5, 2*n_pairs))
-
+    
+    show_plot = False
+    if axs is None:
+        fig, axs = plt.subplots(nrows=n_pairs, figsize=(5, 2*n_pairs))
+        show_plot = True
     if n_pairs == 1:
         axs = np.expand_dims(axs, axis=0)
 
@@ -42,7 +45,7 @@ def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
 
             corr = np.abs(cross_correlation_matrix[i, j])
             corr = corr[len(corr)//2-n_central_bins//2:len(corr)//2+n_central_bins//2]
-            axs[n_pair].plot(x_central, corr)
+            axs[n_pair].plot(x_central, corr, label=label)
             if plot_peaks:
                 peaks, _ = find_peaks(corr)
                 axs[n_pair].plot(x_central[peaks], corr[peaks], "x", label="Peaks")
@@ -50,7 +53,7 @@ def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
 
             axs[n_pair].set_title("Cross-correlation between signals {} and {}".format(i, j))
             axs[n_pair].set_xlabel("Time (ms)")
-            axs[n_pair].set_ylabel("Correlation")
+            axs[n_pair].set_ylabel("Value")
             
             n_pair += 1
     
@@ -58,5 +61,7 @@ def plot_cross_correlation(cross_correlation_matrix, plot_peaks=False,
 
     if output_path:
         plt.savefig(output_path)
-    else:
+    elif show_plot:
         plt.show()
+
+    return axs

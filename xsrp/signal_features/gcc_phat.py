@@ -3,7 +3,7 @@ import numpy as np
 from scipy.signal import correlation_lags
 
 
-def gcc_phat(signals, abs=True, return_lags=True, ifft=True, n_dft_bins=None):
+def gcc_phat(signals, abs=True, return_lags=True, ifft=True, n_dft_bins=None, beta=1):
     """Compute the generalized cross-correlation with phase transform (GCC-PHAT) between two or more signals.
     
     Parameters
@@ -19,6 +19,23 @@ def gcc_phat(signals, abs=True, return_lags=True, ifft=True, n_dft_bins=None):
         instead of returning the cross-correlation in the frequency domain.
     n_dft_bins : int
         The number of DFT bins to use. If None, the number of DFT bins is set to n_samples//2 + 1.
+    beta : float (0 < beta <= 1) 
+        The exponent of the GCC-PHAT denominator. Defaults to 1. If beta is 1, the GCC-PHAT is computed.
+        If beta is 0, the GCC is computed. See [1] for more information.
+
+    Returns
+    -------
+    gcc_phat_matrix : np.ndarray (n_signals, n_signals, n_samples)
+        The GCC-PHAT matrix of the signals.
+    x_central : np.ndarray (n_samples)
+        The lags of the cross-correlation. Only returned if return_lags is True.
+
+    References
+
+    [1] 1. Donohue, K. D., Hannemann, J. & Dietz, H. G.
+    Performance of phase transform for detecting sound sources with microphone arrays in reverberant and noisy environments.
+    Signal Processing 87, 1677-1691 (2007).
+
     """
 
     n_bins = signals.shape[1]//2 + 1
@@ -41,7 +58,7 @@ def gcc_phat(signals, abs=True, return_lags=True, ifft=True, n_dft_bins=None):
         gcc_phat_matrix.append([])
         for j in range(n_signals):
             gcc_ij = signals_dft[i]*np.conj(signals_dft[j])
-            gcc_phat_ij = gcc_ij/np.abs(gcc_ij)
+            gcc_phat_ij = gcc_ij/(np.abs(gcc_ij)**beta + 1e-10)
 
             if ifft:
                 gcc_phat_ij = np.fft.irfft(gcc_phat_ij)

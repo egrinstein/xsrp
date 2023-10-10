@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any
 import numpy as np
 
 
@@ -82,14 +82,14 @@ class UniformSphericalGrid(Grid):
 
         positions = np.zeros(self.grid_shape)
 
-        azimuth_range = np.linspace(0, 2 * np.pi, self.n_azimuth_cells, endpoint=False)
+        self.azimuth_range = np.linspace(0, 2 * np.pi, self.n_azimuth_cells, endpoint=False)
         if self.n_elevation_cells == 0:
-            for i, azimuth in enumerate(azimuth_range):
+            for i, azimuth in enumerate(self.azimuth_range):
                 positions[i] = np.array([np.cos(azimuth), np.sin(azimuth)])
         else:
-            elevation_range = np.linspace(0, np.pi, self.n_elevation_cells, endpoint=False)
-            for i, azimuth in enumerate(azimuth_range):
-                for j, elevation in enumerate(elevation_range):
+            self.elevation_range = np.linspace(0, np.pi, self.n_elevation_cells, endpoint=False)
+            for i, azimuth in enumerate(self.azimuth_range):
+                for j, elevation in enumerate(self.elevation_range):
                     positions[i, j] = np.array([np.cos(azimuth) * np.sin(elevation), np.sin(azimuth) * np.sin(elevation), np.cos(elevation)])
 
         return positions

@@ -80,4 +80,5 @@ dependencies:
       - cython==0.29.36
       - pybind11==2.10.4
       - pyroomacoustics==0.7.3
+      - soundfile==0.12.1
 prefix: /Users/ezajlerg/opt/anaconda3/envs/xsrp
