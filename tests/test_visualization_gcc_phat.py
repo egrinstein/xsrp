@@ -84,3 +84,52 @@ def test_visualize_gcc_phat_freq():
 
     plt.plot(np.angle(cross_correlation_matrix[0, 1]))
     plt.savefig("tests/temp/plot_gcc_phat_freq.png")
+
+
+def test_cross_correlation_multiple_signals():
+    # Compare the autocorrelation of
+    # three different signals: a broadband noise signal,
+    # a broadband speech signal,
+    # a low-frequency sine wave, and a high-frequency sine wave
+
+    os.makedirs("tests/temp", exist_ok=True)
+
+    # Load a speech signal
+    speech_signal, sr = sf.read("tests/fixtures/p225_001.wav")
+    speech_signal = speech_signal[:sr]
+
+    # Create a one second signal
+    noise_signal = np.random.randn(sr)
+
+    # Create a one second sine wave with a frequency of 100 Hz
+    low_freq_signal = np.sin(2*np.pi*100*np.arange(sr)/sr)
+    # Create a one second sine wave with a frequency of 5000 Hz
+    high_freq_signal = np.sin(2*np.pi*5000*np.arange(sr)/sr)
+
+    fig, axs = plt.subplots(nrows=4, figsize=(5, 10))
+
+    labels = ["Noise", "Speech", "100 Hz sine", "5 kHz sine"]
+    colors = ["C0", "C1", "C2", "C3"]
+
+    for i, (signal, label, color) in enumerate(zip(
+        [noise_signal, speech_signal, low_freq_signal, high_freq_signal],
+        labels,
+        colors
+    )):
+        signal = np.stack((signal, signal))
+        cross_correlation_matrix, lags = cross_correlation(signal)
+        gcc_phat_matrix, _ = gcc_phat(signal)
+        axs[i].plot(lags, cross_correlation_matrix[0, 0], label="Cross-correlation")
+        axs[i].plot(lags, gcc_phat_matrix[0, 0], label="GCC-PHAT")
+        axs[i].set_ylabel("Value")
+        axs[i].set_title(label)
+        
+        # Set xticks off for all but the bottom plot
+        if i != len(labels) - 1:
+            axs[i].set_xticks([])
+            if i == 0:
+                axs[i].legend()
+        else:
+            axs[i].set_xlabel("Delay (samples)")
+
+    fig.savefig("tests/temp/cross_correlation_multiple_signals.png")
