@@ -45,8 +45,8 @@ class XSrp(ABC):
             )
 
             # 3. Find the source position in the SRP map
-            estimated_positions, new_candidate_grid = self.grid_search(
-                candidate_grid, srp_map, estimated_positions
+            estimated_positions, new_candidate_grid, signal_features = self.grid_search(
+                candidate_grid, srp_map, estimated_positions, signal_features
             )
 
             # 4. Update the candidate grid
@@ -74,5 +74,6 @@ class XSrp(ABC):
         pass
 
     @abstractmethod
-    def grid_search(self, candidate_grid, srp_map, estimated_positions) -> tuple[np.array, np.array]:
+    def grid_search(self, candidate_grid, srp_map,
+                    estimated_positions, signal_features) -> tuple[np.array, np.array]:
         pass

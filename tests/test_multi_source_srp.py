@@ -5,7 +5,7 @@ import pyroomacoustics as pra
 import soundfile as sf
 
 from xsrp.spatial_mappers import compute_tdoa_matrix
-from xsrp.multi_source_srp import notch_filter, de_emphasize_peak
+from xsrp.grid_search import notch_filter, de_emphasize_peak
 from xsrp.signal_features.gcc_phat import gcc_phat
 from xsrp.signal_features.cross_correlation import cross_correlation
 

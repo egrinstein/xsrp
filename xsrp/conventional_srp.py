@@ -56,11 +56,10 @@ class ConventionalSrp(XSrp):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
-        if mode not in ["gcc_phat_freq", "gcc_phat_time", "cross_correlation"]:
+        available_modes = ["gcc_phat_freq", "gcc_phat_time", "cross_correlation"]
+        if mode not in available_modes:
             raise ValueError(
-                "mode must be one of {}".format(
-                    ["gcc_phat_freq", "gcc_phat_time", "cross_correlation"]
-                )
+                "mode must be one of {}".format(available_modes)
             )
     
         freq_cutoff_in_hz = freq_cutoff_in_hz or fs//2
@@ -114,8 +113,8 @@ class ConventionalSrp(XSrp):
                 n_average_samples=self.n_average_samples,
                 interpolate=self.interpolation)
             
-    def grid_search(self, candidate_grid, srp_map, estimated_positions):
+    def grid_search(self, candidate_grid, srp_map, estimated_positions, signal_features):
         estimated_positions = argmax_grid_searcher(candidate_grid, srp_map)
         
         # An empty grid is returned to indicate that the algorithm has converged
-        return estimated_positions, np.array([])
+        return estimated_positions, np.array([]), signal_features
