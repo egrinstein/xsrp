@@ -4,13 +4,20 @@ from scipy.signal import correlation_lags
 from scipy.interpolate import interp1d
 
 from .grids import Grid
-from .spatial_mappers import frequency_delay_mapper
+from .spatial_mappers import (
+    frequency_delay_mapper,
+    fractional_sample_mapper,
+    integer_sample_mapper
+)
 
 
-def average_sample_projector(spatial_mapper: np.array,
-                             cross_correlation_matrix: np.array,
-                             sum_pairs: bool = True,
-                             n_average_samples: int = 1):
+def temporal_projector(mic_positions: np.array,
+                       candidate_grid: Grid,
+                       cross_correlation_matrix: np.array,
+                       fs: float,
+                       sum_pairs: bool = True,
+                       n_average_samples: int = 1,
+                       interpolate: bool = False):
     """
     Creates a Steered Response Power (SRP) likelihood map by associating
     a cross-correlation value for each grid cell with the
@@ -21,15 +28,25 @@ def average_sample_projector(spatial_mapper: np.array,
         spatial_mapper (np.array): Array of shape (n_cells, n_mics, n_mics)
         cross_correlation_matrix (np.array): Array of cross-correlation values
             of shape (n_mics, n_mics, n_samples)
+        fs (float, optional): The sampling rate of the signals.
         sum_pairs (bool, optional): Whether to sum the cross-correlation values
             of each microphone pair. Defaults to True.
         n_average_samples (int, optional): Number of samples to average over.
             Defaults to 1.
+        interpolate (bool, optional): Whether to use interpolation to estimate
+            the cross-correlation value of each candidate position. Defaults to False.
+
 
     Returns:
         srp_map (np.array): Array of shape (n_cells, n_mics, n_mics) if sum_pairs
             is False, else array of shape (n_cells,)
     """
+
+    if interpolate:
+        spatial_mapper = fractional_sample_mapper(candidate_grid, mic_positions, fs)
+    else:
+        spatial_mapper = integer_sample_mapper(candidate_grid, mic_positions, fs)
+
 
     # Get the number of samples
     n_samples = cross_correlation_matrix.shape[-1]
@@ -97,7 +114,7 @@ def frequency_projector(mic_positions: np.array,
         candidate_grid (Grid): Grid object of n_cells
         cross_correlation_matrix (np.array): Array of cross-correlation values
             of shape (n_mics, n_mics, n_frequencies)
-        fs (float, optional): The sampling rate of the signals. Defaults to 16000.
+        fs (float, optional): The sampling rate of the signals.
         sum_pairs (bool, optional): Whether to sum the cross-correlation values
             of each microphone pair and frequency. Defaults to True.
         freq_cutoff (int, optional): The frequency bin number from which to cutoff

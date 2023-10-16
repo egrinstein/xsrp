@@ -8,13 +8,8 @@ from .grids import (
 from .signal_features.cross_correlation import cross_correlation
 from .signal_features.gcc_phat import gcc_phat
 
-from .spatial_mappers import (
-    integer_sample_mapper,
-    fractional_sample_mapper,
-    frequency_delay_mapper
-)
-from .mappers import (
-    average_sample_projector,
+from .srp_mappers import (
+    temporal_projector,
     frequency_projector
 )
 from .grid_search import (
@@ -98,16 +93,6 @@ class ConventionalSrp(XSrp):
             return gcc_phat(mic_signals, abs=True, return_lags=False, ifft=False,
                             n_dft_bins=self.n_dft_bins)
 
-    def create_spatial_mapper(self, mic_positions, candidate_grid):
-        if self.mode != "gcc_phat_freq":
-        #     dft_bins = np.linspace(0, self.fs/2, self.n_dft_bins//2 + 1)
-        #     return frequency_delay_mapper(candidate_grid, mic_positions, dft_bins)
-        # else:
-            if self.interpolation:
-                return fractional_sample_mapper(candidate_grid, mic_positions, self.fs)
-            else:
-                return integer_sample_mapper(candidate_grid, mic_positions, self.fs)
-
     def create_srp_map(self,
                        mic_positions: np.array,
                        candidate_grid: Grid,
@@ -120,10 +105,15 @@ class ConventionalSrp(XSrp):
                 signal_features,
                 self.fs,
                 freq_cutoff=self.freq_cutoff)
-        return average_sample_projector(
-            spatial_mapper,
-            signal_features, n_average_samples=self.n_average_samples)
-        
+        else:
+            return temporal_projector(
+                mic_positions,
+                candidate_grid,
+                signal_features,
+                self.fs,
+                n_average_samples=self.n_average_samples,
+                interpolate=self.interpolation)
+            
     def grid_search(self, candidate_grid, srp_map, estimated_positions):
         estimated_positions = argmax_grid_searcher(candidate_grid, srp_map)
         
