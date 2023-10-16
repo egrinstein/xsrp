@@ -4,6 +4,7 @@ from scipy.signal import correlation_lags
 from scipy.interpolate import interp1d
 
 from .grids import Grid
+from .spatial_mappers import frequency_delay_mapper
 
 
 def average_sample_projector(spatial_mapper: np.array,
@@ -80,8 +81,10 @@ def average_sample_projector(spatial_mapper: np.array,
     return srp_map
 
 
-def frequency_projector(spatial_mapper: np.array,
+def frequency_projector(mic_positions: np.array,
+                        candidate_grid: Grid,
                         cross_correlation_matrix: np.array,
+                        fs: float,
                         sum_pairs: bool = True,
                         freq_cutoff: int = None):
     """
@@ -89,20 +92,25 @@ def frequency_projector(spatial_mapper: np.array,
     cross-correlation between microphone pairs to the corresponding grid cell and frequency bin.    
 
     Args:
-        spatial_mapper (np.array): Array of shape (n_cells, n_mics, n_mics)
+
+        mic_positions (np.array): Array of shape (n_mics, 3 or 2)
+        candidate_grid (Grid): Grid object of n_cells
         cross_correlation_matrix (np.array): Array of cross-correlation values
             of shape (n_mics, n_mics, n_frequencies)
+        fs (float, optional): The sampling rate of the signals. Defaults to 16000.
         sum_pairs (bool, optional): Whether to sum the cross-correlation values
             of each microphone pair and frequency. Defaults to True.
         freq_cutoff (int, optional): The frequency bin number from which to cutoff
+            the cross-correlation values. Defaults to None.
 
     Returns:
         srp_map (np.array): Array of shape (n_cells, n_mics, n_mics) if sum_pairs
             is False, else array of shape (n_cells,)
     """
 
-    n_mics = spatial_mapper.shape[1]
-    n_frequencies = cross_correlation_matrix.shape[-1]
+    n_freqs = cross_correlation_matrix.shape[-1]
+    freqs = np.linspace(0, fs/2, n_freqs)
+    spatial_mapper = frequency_delay_mapper(candidate_grid, mic_positions, freqs)
 
     srp_map = cross_correlation_matrix[np.newaxis] * spatial_mapper
 

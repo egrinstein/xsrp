@@ -1,3 +1,9 @@
+"""
+This file contains functions to create spatial mappers, which are used to
+project spatial information into a temporal domain. These mappers are
+the bridge between the candidate positions and the microphone signals.
+"""
+
 import numpy as np
 
 from .grids import Grid
@@ -167,3 +173,41 @@ def _compute_theoretical_tdoa(candidate_grid, mic_0, mic_1, c=343.0):
     tdoa = tof_0 - tof_1
 
     return tdoa
+
+
+def compute_tdoa_matrix(mic_positions, source_position, speed_of_sound=343.0, fs=None):
+    """Compute the time difference of arrival between a source and a set of microphones.
+    
+    Parameters
+    ----------
+    mic_positions : np.ndarray (n_mics, 3)
+        The positions of the microphones.
+    source_position : np.ndarray (3,)
+        The position of the source.
+    speed_of_sound : float
+        The speed of sound in the medium.
+    fs : float
+        The sampling frequency of the signal.
+        If provided, the time difference of arrival will be converted to samples.
+    Returns
+    -------
+    np.ndarray (n_mics, n_mics)
+        The time difference of arrival between the source and the microphones.
+    """
+
+    # Compute the distance between the source and the microphones
+    distances = np.linalg.norm(mic_positions - source_position, axis=1)
+
+    # Compute the time difference of arrival between the source and the microphones
+    tdoa = distances/speed_of_sound
+
+    # Compute the TDOA matrix
+    tdoa_matrix = np.zeros((len(tdoa), len(tdoa)))
+    for i in range(len(tdoa)):
+        for j in range(len(tdoa)):
+            tdoa_matrix[i, j] = tdoa[j] - tdoa[i]
+
+    if fs is not None:
+        tdoa_matrix *= fs
+    
+    return tdoa_matrix

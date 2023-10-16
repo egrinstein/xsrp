@@ -4,8 +4,11 @@ import os
 import pyroomacoustics as pra
 import soundfile as sf
 
+from xsrp.spatial_mappers import compute_tdoa_matrix
 from xsrp.multi_source_srp import notch_filter, de_emphasize_peak
+from xsrp.signal_features.gcc_phat import gcc_phat
 from xsrp.signal_features.cross_correlation import cross_correlation
+
 
 
 def test_notch_filter():
@@ -29,52 +32,97 @@ def test_notch_filter():
 def test_de_emphasize_peak():
     os.makedirs("tests/temp", exist_ok=True)
 
+    signals, config = _simulate_multi_source()
 
+    # Compute the TDOA matrix for first source
+    mic_positions = np.array(config["mic_positions"])
+    source_positions = np.array(config["source_positions"])
+    tdoa_0 = compute_tdoa_matrix(mic_positions,
+                                 source_positions[0],
+                                 fs=16000)[0, 1]
+    tdoa_1 = compute_tdoa_matrix(mic_positions,
+                                 source_positions[1],
+                                 fs=16000)[0, 1]
 
-    # Create a room with sources and microphones
-    room_dims = [10, 10, 10]
-
-    # Place the source near the middle of the room
-    source_position = [5, 5, 5]
-    source_signal, fs = sf.read("tests/fixtures/p225_001.wav")
-
-    # Place the microphones in the corners of the room
-    mic_positions = np.array([
-        [1, 1, 1],
-        [1, 9, 1],
-    ])
-
-    room = pra.ShoeBox(room_dims, fs=fs, max_order=0)
-    room.add_source(source_position, signal=source_signal)
-    room.add_microphone_array(
-        pra.MicrophoneArray(
-            mic_positions.T, room.fs
-        )
-    )
-    room.simulate()
-    signals = room.mic_array.signals
-
-    cc, lags = cross_correlation(signals,)
+    cc, lags = gcc_phat(signals)
     cc = cc[0, 1]
+
+    # Get central bins
+    n_central_bins = 100
+    cc = cc[len(cc)//2-n_central_bins//2:len(cc)//2+n_central_bins//2]
+    lags = lags[len(lags)//2-n_central_bins//2:len(lags)//2+n_central_bins//2]
+
     # De-emphasize the peak at the centre of the cross-correlation matrix
-    cc_new, window = de_emphasize_peak(cc, lags, 0, b=10, p=2,
+    cc_new, window = de_emphasize_peak(cc, lags, tdoa_0, b=2, p=2,
                                        return_notch_filter=True)
 
     fig, axs = plt.subplots(3, 1, sharex=True)
 
+    cc_argmax = np.argmax(cc)
     axs[0].set_title(f"Original cross-correlation function")
-    axs[0].plot(lags, cc)
+    axs[0].plot(lags, cc, label=f"Peak at {lags[cc_argmax]}")
+    axs[0].axvline(tdoa_0, color="red", linestyle="--", label="TDOA 1")
+    axs[0].axvline(tdoa_1, color="red", linestyle="--", label="TDOA 2")
     axs[0].set_ylabel("Cross-correlation")
+    axs[0].legend()
 
-    axs[2].set_title(f"De-emphasized cross-correlation function")
-    axs[1].plot(lags, cc_new)
+    cc_new_argmax = np.argmax(cc_new)
+    axs[1].set_title(f"De-emphasized cross-correlation function")
+    axs[1].plot(lags, cc_new, label=f"Peak at {lags[cc_new_argmax]}")
+    axs[1].axvline(tdoa_0, color="red", linestyle="--", label="TDOA 1")
+    axs[1].axvline(tdoa_1, color="red", linestyle="--", label="TDOA 2")
     axs[1].set_ylabel("Cross-correlation")
+    axs[1].legend()
     
-    axs[0].set_title(f"Notch filter")
-    axs[2].set_ylabel("Cross-correlation")
-    axs[2].set_xlabel("Delay")
-
     axs[2].plot(lags, window)
+    axs[2].axvline(tdoa_0, color="red", linestyle="--", label="TDOA 1")
+    axs[2].set_title(f"Notch filter")
+    axs[2].set_ylabel("Weight")
+    axs[2].set_xlabel("Delay")
 
     plt.tight_layout()
     plt.savefig("tests/temp/de_emphasize_peak.png")
+
+
+def _simulate_multi_source():
+    fs = 16000
+
+    config = {
+        "room_dims": [8, 4, 4],
+        "rt60": .15,
+        "source_positions": [
+            [1, 1, 2],
+            [6, 1, 2],
+        ],
+        "source_signals": [
+            "tests/fixtures/46.wav",
+            "tests/fixtures/12546.wav",
+        ],
+        "mic_positions": [
+            [4.1, 2, 2],
+            [3.9, 2, 2],
+        ],
+    }
+
+    # Create a room with sources and microphones
+    e_absorption, max_order = pra.inverse_sabine(config["rt60"],
+                                                 config["room_dims"])
+
+    room = pra.ShoeBox(config["room_dims"], fs=fs,
+                       materials=pra.Material(e_absorption),
+                       max_order=max_order)
+    
+    # Place sources
+    for source_position, source_signal in zip(config["source_positions"],
+                                              config["source_signals"]):
+        source_signal, _ = sf.read(source_signal)
+        room.add_source(source_position, signal=source_signal)
+
+    room.add_microphone_array(  
+        pra.MicrophoneArray(
+            np.array(config["mic_positions"]).T, fs=fs
+        )
+    )
+    room.simulate()
+
+    return room.mic_array.signals, config

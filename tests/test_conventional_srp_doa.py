@@ -144,7 +144,7 @@ def test_doa_3d_clean():
     srp_func = ConventionalSrp(fs, "doa_2D", 200,
         mic_positions=mic_positions_norm, interpolation=False,
         mode="gcc_phat_freq",
-        n_average_samples=1, freq_cutoff_in_hz=200)
+        n_average_samples=5, freq_cutoff_in_hz=None)
 
     estimated_positions, srp_map_base, candidate_grid = srp_func.forward(signals)
 
@@ -156,7 +156,7 @@ def test_doa_3d_clean():
     )
 
     plt.tight_layout()
-    plt.savefig("tests/temp/srp_doa_az_el_clean.pdf")
+    plt.savefig("tests/temp/srp_doa_az_el_clean.png")
 
 
 def _simulate_2d(rt60=0.3, interferer=False):

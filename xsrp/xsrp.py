@@ -2,6 +2,8 @@ import numpy as np
 
 from abc import ABC, abstractmethod
 
+from xsrp.grids import Grid
+
 
 class XSrp(ABC):
     def __init__(self, fs: float, mic_positions=None, room_dims=None, c=343.0):
@@ -12,6 +14,7 @@ class XSrp(ABC):
 
         self.n_mics = len(mic_positions)
 
+        # 0. Create the initial grid of candidate positions
         self.candidate_grid = self.create_initial_candidate_grid(room_dims)
 
     def forward(self, mic_signals, mic_positions=None, room_dims=None) -> tuple[set, np.array]:
@@ -32,19 +35,23 @@ class XSrp(ABC):
 
         estimated_positions = np.array([])
 
+        # 1. Compute the signal features (usually, GCC-PHAT)
         signal_features = self.compute_signal_features(mic_signals)
 
         while True:
-            spatial_mapper = self.create_spatial_mapper(mic_positions, candidate_grid)
-            srp_map = self.project_features(
-                spatial_mapper, signal_features
+            # 2. Project the signal features into space, i.e., create the SRP map
+            srp_map = self.create_srp_map(
+                mic_positions, candidate_grid, signal_features
             )
 
+            # 3. Find the source position in the SRP map
             estimated_positions, new_candidate_grid = self.grid_search(
                 candidate_grid, srp_map, estimated_positions
             )
 
+            # 4. Update the candidate grid
             if len(new_candidate_grid) == 0:
+                # If the new candidate grid is empty, we have found all the sources
                 break
             else:
                 candidate_grid = new_candidate_grid
@@ -60,14 +67,10 @@ class XSrp(ABC):
         pass
 
     @abstractmethod
-    def create_spatial_mapper(self, mic_positions, candidate_grid):
-        pass
-
-
-    @abstractmethod
-    def project_features(self,
-                         spatial_mapper,
-                         signal_features):
+    def create_srp_map(self,
+                       mic_positions: np.array,
+                       candidate_grid: Grid,
+                       signal_features: np.array):
         pass
 
     @abstractmethod

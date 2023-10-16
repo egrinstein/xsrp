@@ -3,7 +3,7 @@ import numpy as np
 from .xsrp import XSrp
 
 from .grids import (
-    UniformSphericalGrid, UniformCartesianGrid
+    Grid, UniformSphericalGrid, UniformCartesianGrid
 )
 from .signal_features.cross_correlation import cross_correlation
 from .signal_features.gcc_phat import gcc_phat
@@ -13,7 +13,7 @@ from .spatial_mappers import (
     fractional_sample_mapper,
     frequency_delay_mapper
 )
-from .projectors import (
+from .mappers import (
     average_sample_projector,
     frequency_projector
 )
@@ -99,22 +99,26 @@ class ConventionalSrp(XSrp):
                             n_dft_bins=self.n_dft_bins)
 
     def create_spatial_mapper(self, mic_positions, candidate_grid):
-        if self.mode == "gcc_phat_freq":
-            dft_bins = np.linspace(0, self.fs/2, self.n_dft_bins//2 + 1)
-            return frequency_delay_mapper(candidate_grid, mic_positions, dft_bins)
-        else:
+        if self.mode != "gcc_phat_freq":
+        #     dft_bins = np.linspace(0, self.fs/2, self.n_dft_bins//2 + 1)
+        #     return frequency_delay_mapper(candidate_grid, mic_positions, dft_bins)
+        # else:
             if self.interpolation:
                 return fractional_sample_mapper(candidate_grid, mic_positions, self.fs)
             else:
                 return integer_sample_mapper(candidate_grid, mic_positions, self.fs)
 
-    def project_features(self,
-                         spatial_mapper,
-                         signal_features):
+    def create_srp_map(self,
+                       mic_positions: np.array,
+                       candidate_grid: Grid,
+                       signal_features: np.array):
+
         if self.mode == "gcc_phat_freq":
             return frequency_projector(
-                spatial_mapper,
+                mic_positions,
+                candidate_grid,
                 signal_features,
+                self.fs,
                 freq_cutoff=self.freq_cutoff)
         return average_sample_projector(
             spatial_mapper,

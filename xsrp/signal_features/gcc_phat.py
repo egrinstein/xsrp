@@ -38,18 +38,18 @@ def gcc_phat(signals, abs=True, return_lags=True, ifft=True, n_dft_bins=None, be
 
     """
 
-    n_bins = signals.shape[1]//2 + 1
+    n_central_bins = signals.shape[1]//2 + 1
     
     if n_dft_bins is None:
-        n_dft_bins = n_bins
+        n_dft_bins = n_central_bins
 
     n_signals, n_samples = signals.shape
     if n_signals < 2:
         raise ValueError("At least two signals must be provided.")
     
     x_corr = correlation_lags(n_samples, n_samples)
-    x_central = x_corr[len(x_corr)//2-n_bins:len(x_corr)//2+n_bins]
-
+    x_central = x_corr[len(x_corr)//2-n_central_bins//2:len(x_corr)//2+n_central_bins//2]
+    
     signals_dft = np.fft.rfft(signals, n=n_dft_bins)
 
     gcc_phat_matrix = []

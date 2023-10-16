@@ -27,7 +27,7 @@ def cross_correlation(signals, n_central_bins=None, abs=True, return_lags=True, 
     
     x_corr = correlation_lags(n_samples, n_samples)
     x_central = x_corr[len(x_corr)//2-n_central_bins//2:len(x_corr)//2+n_central_bins//2]
-
+    
     cross_correlation_matrix = []
 
     for i in range(n_signals):
