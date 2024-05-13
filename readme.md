@@ -2,10 +2,8 @@
 
 This repository contains the code for the paper:
 
-**A review of the Steered
-Response Power
-method for sound
-source localization**
+[Steered Response Power for Sound Source Localization: A Tutorial Review
+](https://arxiv.org/abs/2405.02991)
 
 ## The following functionality is currently implemented:
 
