@@ -17,14 +17,15 @@ This repository contains the code for the paper:
 
 ## Installation
 
-We recommend installing a [Conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html) virtual environment using the provided `environment.yml` file. This will install all the required dependencies. Change directory to the ```xsrp``` folder and run the following commands:
+We recommend using [uv](https://github.com/astral-sh/uv) for dependency management. Change directory to the ```xsrp``` folder and run the following commands:
 
-1. conda env create -f environment.yml
-2. conda activate xsrp
+1. Install uv (if not already installed): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+2. Install dependencies: `uv sync`
+3. Activate the virtual environment: `source .venv/bin/activate` (or use `uv run` to run commands in the environment)
 
 You can then optionally run the tests to verify that everything is working correctly:
 
-3. python -m pytest tests
+4. `uv run pytest tests` (or `make test`)
 
 You may want to check the images that were generated in the ```tests/temp``` folder.
 

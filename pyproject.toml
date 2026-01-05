@@ -1,0 +1,25 @@
+[project]
+name = "xsrp"
+version = "0.1.0"
+description = "eXtensible Steered Response Power for Sound Source Localization"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.25.0",
+    "scipy>=1.10.0",
+    "matplotlib>=3.7.0",
+    "pyroomacoustics>=0.7.3",
+    "soundfile>=0.12.1",
+    "pyaudio>=0.2.11",
+    "PyQt5>=5.15.0",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling", "cython>=0.29.36", "pybind11>=2.10.4"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.3.0",
+]
+

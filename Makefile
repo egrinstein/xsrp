@@ -1,2 +1,5 @@
 test:
-	@python -m pytest
+	@uv run pytest
+
+demo:
+	@uv run demo.py

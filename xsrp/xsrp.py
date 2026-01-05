@@ -77,3 +77,6 @@ class XSrp(ABC):
     def grid_search(self, candidate_grid, srp_map,
                     estimated_positions, signal_features) -> tuple[np.array, np.array]:
         pass
+
+    def __call__(self, mic_signals, mic_positions=None, room_dims=None) -> tuple[np.array, np.array]:
+        return self.forward(mic_signals, mic_positions, room_dims)
