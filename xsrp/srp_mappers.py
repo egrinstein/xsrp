@@ -72,8 +72,13 @@ def temporal_projector(mic_positions: np.array,
                 n_left_neighbours = int(np.floor(n_average_samples/2))
                 n_right_neighbours = int(np.ceil(n_average_samples/2))
 
-
-                if n_left_neighbours + n_right_neighbours == 1:
+                if n_average_samples == 0:
+                    # No averaging: use exact sample value (nearest neighbor)
+                    cross_correlation_idx_int = int(np.round(cross_correlation_idx))
+                    # Clamp to valid range
+                    cross_correlation_idx_int = max(0, min(len(cross_correlation_ij) - 1, cross_correlation_idx_int))
+                    cross_correlation_value = cross_correlation_ij[cross_correlation_idx_int]
+                elif n_left_neighbours + n_right_neighbours == 1:
                     # If only one neighbour is needed, only use interpolation
                     cross_correlation_value = _parabolic_interpolation(cross_correlation_idx, cross_correlation_ij)
                 else:
@@ -129,6 +134,7 @@ def frequency_projector(mic_positions: np.array,
     freqs = np.linspace(0, fs/2, n_freqs)
     spatial_mapper = frequency_delay_mapper(candidate_grid, mic_positions, freqs)
 
+    # Multiply cross-spectrum by steering vector to align phases
     srp_map = cross_correlation_matrix[np.newaxis] * spatial_mapper
 
     if freq_cutoff is not None:
@@ -138,7 +144,8 @@ def frequency_projector(mic_positions: np.array,
         # Sum the cross-correlation values of each microphone pair and frequency
         #srp_map = srp_map.sum(axis=1).sum(axis=1)[:, 2]
         srp_map = srp_map.sum(axis=1).sum(axis=1).sum(axis=1)
-    return np.abs(srp_map)
+    
+    return np.real(srp_map)
 
 
 def _parabolic_interpolation(x_value, y):

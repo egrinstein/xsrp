@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QFileDialog, QMessageBox, QGroupBox,
-    QSlider, QCheckBox
+    QSlider, QCheckBox, QInputDialog
 )
 from PyQt5.QtCore import QTimer, Qt, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -18,6 +18,8 @@ from xsrp.conventional_srp import ConventionalSrp
 from xsrp.streaming import StreamingSrp
 from xsrp.tracking import ExponentialSmoothingTracker
 from xsrp.grids import UniformSphericalGrid
+from xsrp.calibrate import compute_noise_floor, save_noise_floor, load_noise_floor
+from xsrp.signal_features.preprocessing import apply_bandpass_filter
 from visualization.polar import plot_polar_srp_map
 
 
@@ -69,13 +71,23 @@ class SRPDemo(QMainWindow):
         self.streaming_srp = None
         self.grid = None
         self.radial_max = None  # Maximum radial limit for polar plot
+        self.noise_floor = None  # Noise floor SRP map for calibration
+        self.noise_floor_path = None  # Path to noise floor file
+        self.noise_floor_enabled = True  # Whether to subtract noise floor
         
         # Processing parameters
         self.fs = 16000
         self.frame_size = 1024
         self.buffer_size = 2048
-        self.smoothing_alpha = 0.7  # Default smoothing factor
-        self.n_average_samples = 5  # Default averaging samples
+        self.smoothing_alpha = 0.2  # Default smoothing factor
+        self.n_average_samples = 1  # Default averaging samples
+        self.n_azimuth_cells = 360  # Default resolution (1 degrees)
+        self.sharpening = 1.0  # Default sharpening (no sharpening)
+        
+        # Filtering parameters
+        self.filter_enabled = True  # Enable filtering by default
+        self.filter_lowcut = 200.0  # High-pass cutoff in Hz
+        self.filter_highcut = 6000.0  # Low-pass cutoff in Hz
         
         # Timer for real-time updates
         self.timer = QTimer()
@@ -88,6 +100,9 @@ class SRPDemo(QMainWindow):
         default_config_path = Path(__file__).parent / "docs" / "mic_config" / "respeaker.yaml"
         if default_config_path.exists():
             self.load_config(str(default_config_path))
+        
+        # Try to load noise floor if it exists
+        self.load_noise_floor_auto()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -126,9 +141,9 @@ class SRPDemo(QMainWindow):
         self.smoothing_slider = QSlider(Qt.Horizontal)
         self.smoothing_slider.setMinimum(0)
         self.smoothing_slider.setMaximum(100)
-        self.smoothing_slider.setValue(70)  # Default 0.7
+        self.smoothing_slider.setValue(20)  # Default 0.7
         self.smoothing_slider.valueChanged.connect(self.on_smoothing_changed)
-        self.smoothing_value_label = QLabel("0.70")
+        self.smoothing_value_label = QLabel("0.20")
         smoothing_layout.addWidget(self.smoothing_slider)
         smoothing_layout.addWidget(self.smoothing_value_label)
         controls_layout.addWidget(smoothing_label)
@@ -138,21 +153,110 @@ class SRPDemo(QMainWindow):
         averaging_label = QLabel("Averaging Samples:")
         averaging_layout = QHBoxLayout()
         self.averaging_slider = QSlider(Qt.Horizontal)
-        self.averaging_slider.setMinimum(1)
+        self.averaging_slider.setMinimum(0)  # 0 = disabled (no averaging)
         self.averaging_slider.setMaximum(20)
-        self.averaging_slider.setValue(5)  # Default 5
+        self.averaging_slider.setValue(1)  # Default 5
         self.averaging_slider.valueChanged.connect(self.on_averaging_changed)
-        self.averaging_value_label = QLabel("5")
+        self.averaging_value_label = QLabel("1")
         averaging_layout.addWidget(self.averaging_slider)
         averaging_layout.addWidget(self.averaging_value_label)
         controls_layout.addWidget(averaging_label)
         controls_layout.addLayout(averaging_layout)
+        
+        # Resolution control
+        resolution_label = QLabel("Resolution (degrees):")
+        resolution_layout = QHBoxLayout()
+        self.resolution_slider = QSlider(Qt.Horizontal)
+        self.resolution_slider.setMinimum(1)  # 1 degree (360 cells)
+        self.resolution_slider.setMaximum(18)  # 18 degrees (20 cells)
+        self.resolution_slider.setValue(1) # Default 1 degree (360 cells)
+        self.resolution_slider.valueChanged.connect(self.on_resolution_changed)
+        self.resolution_value_label = QLabel("1.0°")
+        resolution_layout.addWidget(self.resolution_slider)
+        resolution_layout.addWidget(self.resolution_value_label)
+        controls_layout.addWidget(resolution_label)
+        controls_layout.addLayout(resolution_layout)
+
+        # Sharpening control
+        sharpening_label = QLabel("Sharpening:")
+        sharpening_layout = QHBoxLayout()
+        self.sharpening_slider = QSlider(Qt.Horizontal)
+        self.sharpening_slider.setMinimum(10)  # 1.0 (no sharpening)
+        self.sharpening_slider.setMaximum(80)  # 8.0 (max sharpening)
+        self.sharpening_slider.setValue(10)  # Default 1.0
+        self.sharpening_slider.valueChanged.connect(self.on_sharpening_changed)
+        self.sharpening_value_label = QLabel("1.0")
+        sharpening_layout.addWidget(self.sharpening_slider)
+        sharpening_layout.addWidget(self.sharpening_value_label)
+        controls_layout.addWidget(sharpening_label)
+        controls_layout.addLayout(sharpening_layout)
+        
+        # Filter controls
+        filter_group = QGroupBox("Bandpass Filter")
+        filter_layout = QVBoxLayout()
+        
+        # Enable filter checkbox
+        self.filter_enabled_checkbox = QCheckBox("Enable Filtering")
+        self.filter_enabled_checkbox.setChecked(True)
+        self.filter_enabled_checkbox.stateChanged.connect(self.on_filter_enabled_changed)
+        filter_layout.addWidget(self.filter_enabled_checkbox)
+        
+        # Low cutoff (high-pass)
+        lowcut_label = QLabel("High-pass (Hz):")
+        lowcut_layout = QHBoxLayout()
+        self.lowcut_slider = QSlider(Qt.Horizontal)
+        self.lowcut_slider.setMinimum(0)  # 0 Hz
+        self.lowcut_slider.setMaximum(1000)  # 1000 Hz
+        self.lowcut_slider.setValue(200)  # Default 200 Hz
+        self.lowcut_slider.valueChanged.connect(self.on_lowcut_changed)
+        self.lowcut_value_label = QLabel("200")
+        lowcut_layout.addWidget(self.lowcut_slider)
+        lowcut_layout.addWidget(self.lowcut_value_label)
+        filter_layout.addWidget(lowcut_label)
+        filter_layout.addLayout(lowcut_layout)
+        
+        # High cutoff (low-pass)
+        highcut_label = QLabel("Low-pass (Hz):")
+        highcut_layout = QHBoxLayout()
+        self.highcut_slider = QSlider(Qt.Horizontal)
+        self.highcut_slider.setMinimum(1000)  # 1000 Hz
+        self.highcut_slider.setMaximum(8000)  # 8000 Hz (Nyquist for 16kHz)
+        self.highcut_slider.setValue(6000)  # Default 6000 Hz
+        self.highcut_slider.valueChanged.connect(self.on_highcut_changed)
+        self.highcut_value_label = QLabel("6000")
+        highcut_layout.addWidget(self.highcut_slider)
+        highcut_layout.addWidget(self.highcut_value_label)
+        filter_layout.addWidget(highcut_label)
+        filter_layout.addLayout(highcut_layout)
+        
+        filter_group.setLayout(filter_layout)
+        controls_layout.addWidget(filter_group)
         
         # Show tracked position toggle
         self.show_tracked_checkbox = QCheckBox("Show Tracked Position")
         self.show_tracked_checkbox.setChecked(True)  # Default to showing
         self.show_tracked_checkbox.stateChanged.connect(self.on_show_tracked_changed)
         controls_layout.addWidget(self.show_tracked_checkbox)
+        
+        # Noise floor calibration
+        noise_floor_label = QLabel("Noise Floor:")
+        noise_floor_layout = QHBoxLayout()
+        self.noise_floor_status_label = QLabel("Not loaded")
+        calibrate_button = QPushButton("Calibrate...")
+        calibrate_button.clicked.connect(self.calibrate_noise_floor)
+        load_noise_floor_button = QPushButton("Load...")
+        load_noise_floor_button.clicked.connect(self.load_noise_floor_dialog)
+        noise_floor_layout.addWidget(self.noise_floor_status_label)
+        noise_floor_layout.addWidget(calibrate_button)
+        noise_floor_layout.addWidget(load_noise_floor_button)
+        controls_layout.addWidget(noise_floor_label)
+        controls_layout.addLayout(noise_floor_layout)
+        
+        # Enable noise floor subtraction checkbox
+        self.noise_floor_enabled_checkbox = QCheckBox("Enable Noise Floor Subtraction")
+        self.noise_floor_enabled_checkbox.setChecked(True)  # Default to enabled
+        self.noise_floor_enabled_checkbox.stateChanged.connect(self.on_noise_floor_enabled_changed)
+        controls_layout.addWidget(self.noise_floor_enabled_checkbox)
         
         # Start/Stop button
         self.start_stop_button = QPushButton("Start Recording")
@@ -217,10 +321,198 @@ class SRPDemo(QMainWindow):
             if not self.initialize_srp_processor():
                 QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
     
+    def on_resolution_changed(self, value):
+        """Handle resolution slider change."""
+        # Convert degrees to number of azimuth cells
+        degrees_per_cell = float(value)
+        self.n_azimuth_cells = int(360 / degrees_per_cell)
+        self.resolution_value_label.setText(f"{degrees_per_cell:.1f}°")
+        # Reinitialize SRP processor if recording (since n_azimuth_cells is set at initialization)
+        if self.is_recording and self.streaming_srp is not None:
+            if not self.initialize_srp_processor():
+                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+    
+    def on_sharpening_changed(self, value):
+        """Handle sharpening slider change."""
+        self.sharpening = value / 10.0
+        self.sharpening_value_label.setText(f"{self.sharpening:.1f}")
+        # Reinitialize SRP processor if recording
+        if self.is_recording and self.streaming_srp is not None:
+            # We can just update the sharpening parameter directly if the processor exists
+            if hasattr(self.streaming_srp.srp_processor, 'sharpening'):
+                self.streaming_srp.srp_processor.sharpening = self.sharpening
+            else:
+                # If for some reason we can't update directly, reinitialize
+                if not self.initialize_srp_processor():
+                    QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+
     def on_show_tracked_changed(self, state):
         """Handle show tracked position checkbox change."""
         # The next frame update will use the new setting
         pass
+    
+    def on_noise_floor_enabled_changed(self, state):
+        """Handle noise floor enabled checkbox change."""
+        self.noise_floor_enabled = state == Qt.Checked
+    
+    def on_filter_enabled_changed(self, state):
+        """Handle filter enabled checkbox change."""
+        self.filter_enabled = state == Qt.Checked
+    
+    def on_lowcut_changed(self, value):
+        """Handle lowcut (high-pass) slider change."""
+        self.filter_lowcut = float(value)
+        self.lowcut_value_label.setText(str(value))
+    
+    def on_highcut_changed(self, value):
+        """Handle highcut (low-pass) slider change."""
+        self.filter_highcut = float(value)
+        self.highcut_value_label.setText(str(value))
+    
+    def get_noise_floor_path(self) -> Path:
+        """Get the default path for noise floor file."""
+        return Path(__file__).parent / "temp" / "srp_noise_floor.h5"
+    
+    def load_noise_floor_auto(self):
+        """Automatically load noise floor if it exists."""
+        noise_floor_path = self.get_noise_floor_path()
+        if noise_floor_path.exists():
+            try:
+                self.noise_floor, metadata = load_noise_floor(str(noise_floor_path))
+                self.noise_floor_path = noise_floor_path
+                self.noise_floor_status_label.setText("Loaded")
+                # Validate that noise floor matches current grid size
+                if hasattr(self, 'n_azimuth_cells'):
+                    if len(self.noise_floor) != self.n_azimuth_cells:
+                        self.noise_floor = None
+                        self.noise_floor_path = None
+                        self.noise_floor_status_label.setText("Size mismatch")
+            except Exception as e:
+                print(f"Failed to load noise floor: {e}")
+                self.noise_floor = None
+                self.noise_floor_status_label.setText("Load failed")
+        else:
+            self.noise_floor = None
+            self.noise_floor_status_label.setText("Not found")
+    
+    def load_noise_floor_dialog(self):
+        """Open dialog to load noise floor file."""
+        default_path = Path(__file__).parent / "temp"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Noise Floor",
+            str(default_path),
+            "HDF5 Files (*.h5 *.hdf5);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                self.noise_floor, metadata = load_noise_floor(file_path)
+                self.noise_floor_path = Path(file_path)
+                self.noise_floor_status_label.setText(f"Loaded: {Path(file_path).name}")
+                
+                # Validate that noise floor matches current grid size
+                if hasattr(self, 'n_azimuth_cells'):
+                    if len(self.noise_floor) != self.n_azimuth_cells:
+                        QMessageBox.warning(
+                            self,
+                            "Size Mismatch",
+                            f"Noise floor has {len(self.noise_floor)} cells, but current grid has {self.n_azimuth_cells} cells."
+                        )
+                        self.noise_floor = None
+                        self.noise_floor_path = None
+                        self.noise_floor_status_label.setText("Size mismatch")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load noise floor: {e}")
+                self.noise_floor = None
+                self.noise_floor_status_label.setText("Load failed")
+    
+    def calibrate_noise_floor(self):
+        """Calibrate noise floor by recording in silent environment."""
+        if not self.validate_config():
+            return
+        
+        if self.is_recording:
+            QMessageBox.warning(self, "Error", "Please stop recording before calibrating")
+            return
+        
+        # Ask for duration
+        duration, ok = QInputDialog.getDouble(
+            self,
+            "Calibration Duration",
+            "Enter duration in seconds:",
+            5.0,  # Default
+            1.0,  # Minimum
+            60.0,  # Maximum
+            1  # Decimals
+        )
+        
+        if not ok:
+            return
+        
+        device_index = self.device_combo.currentData()
+        if device_index is None:
+            QMessageBox.warning(self, "Error", "Please select an audio device")
+            return
+        
+        # Show progress dialog
+        progress_dialog = QMessageBox(self)
+        progress_dialog.setWindowTitle("Calibrating Noise Floor")
+        progress_dialog.setText(f"Recording noise floor for {duration} seconds...\nPlease ensure the environment is silent.")
+        progress_dialog.setStandardButtons(QMessageBox.NoButton)
+        progress_dialog.setModal(False)
+        progress_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        try:
+            # Compute noise floor
+            noise_floor = compute_noise_floor(
+                mic_positions=self.mic_positions,
+                fs=self.fs,
+                frame_size=self.frame_size,
+                duration_seconds=duration,
+                n_azimuth_cells=self.n_azimuth_cells,
+                n_average_samples=self.n_average_samples,
+                sharpening=self.sharpening,
+                mode="gcc_phat_time",
+                interpolation=True,
+                device_index=device_index,
+                ignore_channels=self.config.get('ignore_channels', []),
+                progress_callback=lambda current, total: QApplication.processEvents(),
+                filter_enabled=self.filter_enabled,
+                filter_lowcut=self.filter_lowcut,
+                filter_highcut=self.filter_highcut
+            )
+            
+            # Save noise floor
+            noise_floor_path = self.get_noise_floor_path()
+            metadata = {
+                'fs': self.fs,
+                'n_azimuth_cells': self.n_azimuth_cells,
+                'n_average_samples': self.n_average_samples,
+                'sharpening': self.sharpening,
+                'duration_seconds': duration
+            }
+            save_noise_floor(noise_floor, str(noise_floor_path), metadata)
+            
+            # Close progress dialog properly
+            progress_dialog.hide()
+            progress_dialog.deleteLater()
+            QApplication.processEvents()
+            
+            # Auto-load the noise floor that was just saved
+            self.load_noise_floor_auto()
+            
+            QMessageBox.information(self, "Success", f"Noise floor calibrated and saved to {noise_floor_path.name}")
+            
+        except Exception as e:
+            # Close progress dialog properly
+            progress_dialog.hide()
+            progress_dialog.deleteLater()
+            QApplication.processEvents()
+            
+            QMessageBox.critical(self, "Error", f"Failed to calibrate noise floor: {e}")
     
     def load_config_dialog(self):
         """Open dialog to load microphone configuration file."""
@@ -298,8 +590,7 @@ class SRPDemo(QMainWindow):
             return False
         
         # Create DOA grid (azimuth only)
-        n_azimuth_cells = 72  # 5 degree resolution
-        self.grid = UniformSphericalGrid(n_azimuth_cells)
+        self.grid = UniformSphericalGrid(self.n_azimuth_cells)
         
         # For 1D DOA grid, use 2D mic positions (x, y only)
         # The grid positions are 2D, so mic positions must also be 2D
@@ -310,11 +601,12 @@ class SRPDemo(QMainWindow):
         srp_processor = ConventionalSrp(
             fs=self.fs,
             grid_type="doa_1D",
-            n_grid_cells=n_azimuth_cells,
+            n_grid_cells=self.n_azimuth_cells,
             mic_positions=mic_positions_2d,
             mode="gcc_phat_time",
             interpolation=True,
-            n_average_samples=self.n_average_samples  # Volumetric: average over N samples
+            n_average_samples=self.n_average_samples,  # Volumetric: average over N samples
+            sharpening=self.sharpening
         )
         
         # Create tracker with current smoothing alpha
@@ -332,6 +624,12 @@ class SRPDemo(QMainWindow):
         
         # Reset radial max when reinitializing
         self.radial_max = None
+        
+        # Reload noise floor if grid size changed
+        if self.noise_floor is not None:
+            if len(self.noise_floor) != self.n_azimuth_cells:
+                # Grid size changed, need to reload or clear noise floor
+                self.load_noise_floor_auto()
         
         return True
     
@@ -409,15 +707,46 @@ class SRPDemo(QMainWindow):
             audio_array = audio_array.astype(np.float32) / 32768.0  # Normalize to [-1, 1]
             
             # Reshape to (channels, samples)
-            audio_array = audio_array.reshape(self.device_channels, self.frame_size)
+            # PyAudio delivers interleaved data: [c0s0, c1s0, c2s0, ... c0s1, c1s1, ...]
+            # So we must reshape to (samples, channels) then transpose
+            audio_array = audio_array.reshape(self.frame_size, self.device_channels).T
             
+            # DEBUG: Print RMS levels for all channels to verify mapping
+            rms = np.sqrt(np.mean(audio_array**2, axis=1))
+            # print(f"RMS: {['{:.3f}'.format(x) for x in rms]}")
+            
+            # Warn if we only see signal on one channel (common configuration error)
+            # We ignore the ignored_channels (playback loopback) for this check
+            check_channels = [i for i in range(len(rms)) if i not in self.config.get('ignore_channels', [])]
+            mic_rms = rms[check_channels]
+
+            print(f"Mic RMS: {['{:.3f}'.format(x) for x in mic_rms]}")
+
             # Filter out ignored channels
             ignore_channels = self.config.get('ignore_channels', [])
             valid_channels = [i for i in range(self.device_channels) if i not in ignore_channels]
             audio_frame = audio_array[valid_channels, :]
             
+            # Apply bandpass filter if enabled
+            if self.filter_enabled:
+                try:
+                    audio_frame = apply_bandpass_filter(
+                        audio_frame,
+                        self.fs,
+                        lowcut=self.filter_lowcut,
+                        highcut=self.filter_highcut
+                    )
+                except Exception as e:
+                    print(f"Filter error: {e}")
+            
             # Process frame
             srp_map, tracked_doa = self.streaming_srp.process_frame(audio_frame)
+            
+            # Subtract noise floor if available and enabled
+            if self.noise_floor_enabled and self.noise_floor is not None:
+                srp_map = srp_map - self.noise_floor
+                # Ensure non-negative values
+                srp_map = np.maximum(srp_map, 0)
             
             # Update radial max if needed (use max of current frame * 1.1, or initialize)
             current_max = np.max(srp_map) * 1.1 if np.max(srp_map) > 0 else 1.0

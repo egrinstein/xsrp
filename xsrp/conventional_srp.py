@@ -43,6 +43,8 @@ class ConventionalSrp(XSrp):
         Whether to use fractional sample interpolation. Defaults to False.
     n_average_samples : int, optional
         The number of cross-correlation samples to average over. Defaults to 1.
+    sharpening : float, optional
+        The exponent to raise the SRP map to. Defaults to 1.
         
     """
     
@@ -52,7 +54,8 @@ class ConventionalSrp(XSrp):
                  interpolation=False,
                  n_average_samples=1,
                  n_dft_bins=1024,
-                 freq_cutoff_in_hz=None):
+                 freq_cutoff_in_hz=None,
+                 sharpening=1.0):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
@@ -72,6 +75,7 @@ class ConventionalSrp(XSrp):
         self.n_average_samples = n_average_samples
         self.n_dft_bins = n_dft_bins
         self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
+        self.sharpening = sharpening
 
         super().__init__(fs, mic_positions, room_dims, c)
     
@@ -98,20 +102,26 @@ class ConventionalSrp(XSrp):
                        signal_features: np.array):
 
         if self.mode == "gcc_phat_freq":
-            return frequency_projector(
+            srp_map = frequency_projector(
                 mic_positions,
                 candidate_grid,
                 signal_features,
                 self.fs,
                 freq_cutoff=self.freq_cutoff)
         else:
-            return temporal_projector(
+            srp_map = temporal_projector(
                 mic_positions,
                 candidate_grid,
                 signal_features,
                 self.fs,
                 n_average_samples=self.n_average_samples,
                 interpolate=self.interpolation)
+        
+        if self.sharpening != 1.0:
+            srp_map[srp_map < 0] = 0
+            srp_map = srp_map ** self.sharpening
+            
+        return srp_map
             
     def grid_search(self, candidate_grid, srp_map, estimated_positions, signal_features):
         estimated_positions = argmax_grid_searcher(candidate_grid, srp_map)

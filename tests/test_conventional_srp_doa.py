@@ -135,14 +135,14 @@ def test_doa_3d_clean():
     # 1. Low-reverb without interference
     (
         fs, _,
-        mic_positions_norm, _,
+        mic_positions_relative, _,
         source_position_norm, _,
         interferer_position_norm, _,
         signals,
     ) = base_scenario = _simulate_3d(interferer=False)
 
     srp_func = ConventionalSrp(fs, "doa_2D", 200,
-        mic_positions=mic_positions_norm, interpolation=False,
+        mic_positions=mic_positions_relative, interpolation=False,
         mode="gcc_phat_freq",
         n_average_samples=5, freq_cutoff_in_hz=None)
 
@@ -190,7 +190,7 @@ def _simulate_3d(rt60=0.3, interferer=False, interferer_snr=10, scenario=None):
     if scenario is not None:
         (
             room_dims,
-            mic_positions_norm,
+            mic_positions_relative,
             mic_positions,
             source_position_norm,
             source_position,
@@ -200,7 +200,7 @@ def _simulate_3d(rt60=0.3, interferer=False, interferer_snr=10, scenario=None):
     else:
         (
             room_dims,
-            mic_positions_norm,
+            mic_positions_relative,
             mic_positions,
             source_position_norm,
             source_position,
@@ -242,7 +242,7 @@ def _simulate_3d(rt60=0.3, interferer=False, interferer_snr=10, scenario=None):
         
         signals += interferer_recorded
     return (
-        fs, room_dims, mic_positions_norm, mic_positions,
+        fs, room_dims, mic_positions_relative, mic_positions,
         source_position_norm, source_position,
         interferer_position_norm, interferer_position, signals
     )
@@ -281,9 +281,10 @@ def generate_random_scenario(mode="2d", interferer=False):
             [-0.0243,  0.0243, -0.024],
             [-0.0243, -0.0243,  0.024]
         ])
+        mic_positions_relative = mic_positions.copy()
         mic_positions_norm = mic_positions / np.linalg.norm(mic_positions, axis=1, keepdims=True)
 
-        mic_positions = mic_positions_norm + np.array([2.5, 2.5, 1.5])
+        mic_positions = mic_positions + np.array([2.5, 2.5, 1.5])
         # Place the source 1 meter away from the microphone array at a random angle
         
         azimuth = np.random.uniform(low=0, high=2*np.pi)
@@ -308,7 +309,7 @@ def generate_random_scenario(mode="2d", interferer=False):
 
     return (
             room_dims,
-            mic_positions_norm,
+            mic_positions_relative,
             mic_positions,
             source_position_norm,
             source_position,

@@ -12,6 +12,7 @@ dependencies = [
     "pyaudio>=0.2.11",
     "PyQt5>=5.15.0",
     "pyyaml>=6.0",
+    "h5py>=3.8.0",
 ]
 
 [build-system]
