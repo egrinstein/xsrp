@@ -1,26 +1,83 @@
+# Standard library imports
 import sys
-import os
-import yaml
-import numpy as np
-import pyaudio
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QComboBox, QLabel, QFileDialog, QMessageBox, QGroupBox,
-    QSlider, QCheckBox, QInputDialog
-)
-from PyQt5.QtCore import QTimer, Qt, Qt
+# Third-party imports
+import numpy as np
+import pyaudio
+import yaml
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtWidgets import (
+    QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
+    QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton, QSlider,
+    QVBoxLayout, QWidget
+)
 
+# Local imports
+from xsrp.calibrate import compute_noise_floor, load_noise_floor, save_noise_floor
 from xsrp.conventional_srp import ConventionalSrp
+from xsrp.grids import UniformSphericalGrid
+from xsrp.signal_features.preprocessing import apply_bandpass_filter
 from xsrp.streaming import StreamingSrp
 from xsrp.tracking import ExponentialSmoothingTracker
-from xsrp.grids import UniformSphericalGrid
-from xsrp.calibrate import compute_noise_floor, save_noise_floor, load_noise_floor
-from xsrp.signal_features.preprocessing import apply_bandpass_filter
 from visualization.polar import plot_polar_srp_map
+
+# Constants
+DEFAULT_SAMPLING_RATE = 16000
+DEFAULT_FRAME_SIZE = 1024
+DEFAULT_SMOOTHING_ALPHA = 0.2
+DEFAULT_N_AVERAGE_SAMPLES = 1
+DEFAULT_N_AZIMUTH_CELLS = 360  # 1 degree resolution
+DEFAULT_SHARPENING = 1.0
+DEFAULT_FILTER_ENABLED = True
+DEFAULT_FILTER_LOWCUT = 200.0  # High-pass cutoff in Hz
+DEFAULT_FILTER_HIGHCUT = 6000.0  # Low-pass cutoff in Hz
+DEFAULT_SRP_MODE = "gcc_phat_freq"
+DEFAULT_FREQUENCY_WEIGHTING = None
+
+# UI Constants
+WINDOW_TITLE = "Real-time SRP Demo"
+WINDOW_X = 100
+WINDOW_Y = 100
+WINDOW_WIDTH = 1000
+WINDOW_HEIGHT = 800
+PLOT_FIGSIZE = (8, 8)
+
+# Slider ranges and defaults
+SMOOTHING_SLIDER_MIN = 0
+SMOOTHING_SLIDER_MAX = 100
+SMOOTHING_SLIDER_DEFAULT = 20  # Maps to 0.20
+AVERAGING_SLIDER_MIN = 0
+AVERAGING_SLIDER_MAX = 20
+AVERAGING_SLIDER_DEFAULT = 1
+RESOLUTION_SLIDER_MIN = 1  # 1 degree (360 cells)
+RESOLUTION_SLIDER_MAX = 18  # 18 degrees (20 cells)
+RESOLUTION_SLIDER_DEFAULT = 1
+SHARPENING_SLIDER_MIN = 10  # 1.0 (no sharpening)
+SHARPENING_SLIDER_MAX = 80  # 8.0 (max sharpening)
+SHARPENING_SLIDER_DEFAULT = 10
+LOWCUT_SLIDER_MIN = 0
+LOWCUT_SLIDER_MAX = 1000
+LOWCUT_SLIDER_DEFAULT = 200
+HIGHCUT_SLIDER_MIN = 1000
+HIGHCUT_SLIDER_MAX = 8000  # Nyquist for 16kHz
+HIGHCUT_SLIDER_DEFAULT = 6000
+
+# Calibration defaults
+CALIBRATION_DURATION_DEFAULT = 5.0
+CALIBRATION_DURATION_MIN = 1.0
+CALIBRATION_DURATION_MAX = 60.0
+
+# File paths
+DEFAULT_CONFIG_DIR = "docs/mic_config"
+DEFAULT_CONFIG_FILE = "respeaker.yaml"
+DEFAULT_NOISE_FLOOR_DIR = "temp"
+DEFAULT_NOISE_FLOOR_FILE = "srp_noise_floor.h5"
+
+# Radial plot adaptation
+RADIAL_MAX_MULTIPLIER = 1.1
 
 
 class PolarPlotWidget(QWidget):
@@ -28,7 +85,7 @@ class PolarPlotWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.figure = Figure(figsize=(8, 8))
+        self.figure = Figure(figsize=PLOT_FIGSIZE)
         self.canvas = FigureCanvas(self.figure)
         self.ax = None
         
@@ -58,8 +115,8 @@ class SRPDemo(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Real-time SRP Demo")
-        self.setGeometry(100, 100, 1000, 800)
+        self.setWindowTitle(WINDOW_TITLE)
+        self.setGeometry(WINDOW_X, WINDOW_Y, WINDOW_WIDTH, WINDOW_HEIGHT)
         
         # Audio and processing state
         self.audio = None
@@ -76,24 +133,23 @@ class SRPDemo(QMainWindow):
         self.noise_floor_enabled = True  # Whether to subtract noise floor
         
         # Processing parameters
-        self.fs = 16000
-        self.frame_size = 1024
-        self.buffer_size = 2048
-        self.smoothing_alpha = 0.2  # Default smoothing factor
-        self.n_average_samples = 1  # Default averaging samples
-        self.n_azimuth_cells = 360  # Default resolution (1 degrees)
-        self.sharpening = 1.0  # Default sharpening (no sharpening)
+        self.fs = DEFAULT_SAMPLING_RATE
+        self.frame_size = DEFAULT_FRAME_SIZE
+        self.smoothing_alpha = DEFAULT_SMOOTHING_ALPHA
+        self.n_average_samples = DEFAULT_N_AVERAGE_SAMPLES
+        self.n_azimuth_cells = DEFAULT_N_AZIMUTH_CELLS
+        self.sharpening = DEFAULT_SHARPENING
         
         # Filtering parameters
-        self.filter_enabled = True  # Enable filtering by default
-        self.filter_lowcut = 200.0  # High-pass cutoff in Hz
-        self.filter_highcut = 6000.0  # Low-pass cutoff in Hz
+        self.filter_enabled = DEFAULT_FILTER_ENABLED
+        self.filter_lowcut = DEFAULT_FILTER_LOWCUT
+        self.filter_highcut = DEFAULT_FILTER_HIGHCUT
         
         # SRP mode parameter
-        self.srp_mode = "gcc_phat_freq"  # 'gcc_phat_time' or 'gcc_phat_freq'
+        self.srp_mode = DEFAULT_SRP_MODE
         
         # Frequency weighting parameter
-        self.frequency_weighting = None  # None, 'coherence', 'sparsity', 'par'
+        self.frequency_weighting = DEFAULT_FREQUENCY_WEIGHTING
         
         # Timer for real-time updates
         self.timer = QTimer()
@@ -103,7 +159,7 @@ class SRPDemo(QMainWindow):
         self.init_ui()
         
         # Load default config
-        default_config_path = Path(__file__).parent / "docs" / "mic_config" / "respeaker.yaml"
+        default_config_path = Path(__file__).parent / DEFAULT_CONFIG_DIR / DEFAULT_CONFIG_FILE
         if default_config_path.exists():
             self.load_config(str(default_config_path))
         
@@ -145,11 +201,11 @@ class SRPDemo(QMainWindow):
         smoothing_label = QLabel("Smoothing Speed:")
         smoothing_layout = QHBoxLayout()
         self.smoothing_slider = QSlider(Qt.Horizontal)
-        self.smoothing_slider.setMinimum(0)
-        self.smoothing_slider.setMaximum(100)
-        self.smoothing_slider.setValue(20)  # Default 0.7
+        self.smoothing_slider.setMinimum(SMOOTHING_SLIDER_MIN)
+        self.smoothing_slider.setMaximum(SMOOTHING_SLIDER_MAX)
+        self.smoothing_slider.setValue(SMOOTHING_SLIDER_DEFAULT)
         self.smoothing_slider.valueChanged.connect(self.on_smoothing_changed)
-        self.smoothing_value_label = QLabel("0.20")
+        self.smoothing_value_label = QLabel(f"{DEFAULT_SMOOTHING_ALPHA:.2f}")
         smoothing_layout.addWidget(self.smoothing_slider)
         smoothing_layout.addWidget(self.smoothing_value_label)
         controls_layout.addWidget(smoothing_label)
@@ -159,11 +215,11 @@ class SRPDemo(QMainWindow):
         averaging_label = QLabel("Averaging Samples:")
         averaging_layout = QHBoxLayout()
         self.averaging_slider = QSlider(Qt.Horizontal)
-        self.averaging_slider.setMinimum(0)  # 0 = disabled (no averaging)
-        self.averaging_slider.setMaximum(20)
-        self.averaging_slider.setValue(1)  # Default 5
+        self.averaging_slider.setMinimum(AVERAGING_SLIDER_MIN)
+        self.averaging_slider.setMaximum(AVERAGING_SLIDER_MAX)
+        self.averaging_slider.setValue(AVERAGING_SLIDER_DEFAULT)
         self.averaging_slider.valueChanged.connect(self.on_averaging_changed)
-        self.averaging_value_label = QLabel("1")
+        self.averaging_value_label = QLabel(str(DEFAULT_N_AVERAGE_SAMPLES))
         averaging_layout.addWidget(self.averaging_slider)
         averaging_layout.addWidget(self.averaging_value_label)
         controls_layout.addWidget(averaging_label)
@@ -173,11 +229,11 @@ class SRPDemo(QMainWindow):
         resolution_label = QLabel("Resolution (degrees):")
         resolution_layout = QHBoxLayout()
         self.resolution_slider = QSlider(Qt.Horizontal)
-        self.resolution_slider.setMinimum(1)  # 1 degree (360 cells)
-        self.resolution_slider.setMaximum(18)  # 18 degrees (20 cells)
-        self.resolution_slider.setValue(1) # Default 1 degree (360 cells)
+        self.resolution_slider.setMinimum(RESOLUTION_SLIDER_MIN)
+        self.resolution_slider.setMaximum(RESOLUTION_SLIDER_MAX)
+        self.resolution_slider.setValue(RESOLUTION_SLIDER_DEFAULT)
         self.resolution_slider.valueChanged.connect(self.on_resolution_changed)
-        self.resolution_value_label = QLabel("1.0°")
+        self.resolution_value_label = QLabel(f"{360 / DEFAULT_N_AZIMUTH_CELLS:.1f}°")
         resolution_layout.addWidget(self.resolution_slider)
         resolution_layout.addWidget(self.resolution_value_label)
         controls_layout.addWidget(resolution_label)
@@ -187,11 +243,11 @@ class SRPDemo(QMainWindow):
         sharpening_label = QLabel("Sharpening:")
         sharpening_layout = QHBoxLayout()
         self.sharpening_slider = QSlider(Qt.Horizontal)
-        self.sharpening_slider.setMinimum(10)  # 1.0 (no sharpening)
-        self.sharpening_slider.setMaximum(80)  # 8.0 (max sharpening)
-        self.sharpening_slider.setValue(10)  # Default 1.0
+        self.sharpening_slider.setMinimum(SHARPENING_SLIDER_MIN)
+        self.sharpening_slider.setMaximum(SHARPENING_SLIDER_MAX)
+        self.sharpening_slider.setValue(SHARPENING_SLIDER_DEFAULT)
         self.sharpening_slider.valueChanged.connect(self.on_sharpening_changed)
-        self.sharpening_value_label = QLabel("1.0")
+        self.sharpening_value_label = QLabel(f"{DEFAULT_SHARPENING:.1f}")
         sharpening_layout.addWidget(self.sharpening_slider)
         sharpening_layout.addWidget(self.sharpening_value_label)
         controls_layout.addWidget(sharpening_label)
@@ -203,7 +259,7 @@ class SRPDemo(QMainWindow):
         
         # Enable filter checkbox
         self.filter_enabled_checkbox = QCheckBox("Enable Filtering")
-        self.filter_enabled_checkbox.setChecked(True)
+        self.filter_enabled_checkbox.setChecked(DEFAULT_FILTER_ENABLED)
         self.filter_enabled_checkbox.stateChanged.connect(self.on_filter_enabled_changed)
         filter_layout.addWidget(self.filter_enabled_checkbox)
         
@@ -211,11 +267,11 @@ class SRPDemo(QMainWindow):
         lowcut_label = QLabel("High-pass (Hz):")
         lowcut_layout = QHBoxLayout()
         self.lowcut_slider = QSlider(Qt.Horizontal)
-        self.lowcut_slider.setMinimum(0)  # 0 Hz
-        self.lowcut_slider.setMaximum(1000)  # 1000 Hz
-        self.lowcut_slider.setValue(200)  # Default 200 Hz
+        self.lowcut_slider.setMinimum(LOWCUT_SLIDER_MIN)
+        self.lowcut_slider.setMaximum(LOWCUT_SLIDER_MAX)
+        self.lowcut_slider.setValue(LOWCUT_SLIDER_DEFAULT)
         self.lowcut_slider.valueChanged.connect(self.on_lowcut_changed)
-        self.lowcut_value_label = QLabel("200")
+        self.lowcut_value_label = QLabel(str(int(DEFAULT_FILTER_LOWCUT)))
         lowcut_layout.addWidget(self.lowcut_slider)
         lowcut_layout.addWidget(self.lowcut_value_label)
         filter_layout.addWidget(lowcut_label)
@@ -225,11 +281,11 @@ class SRPDemo(QMainWindow):
         highcut_label = QLabel("Low-pass (Hz):")
         highcut_layout = QHBoxLayout()
         self.highcut_slider = QSlider(Qt.Horizontal)
-        self.highcut_slider.setMinimum(1000)  # 1000 Hz
-        self.highcut_slider.setMaximum(8000)  # 8000 Hz (Nyquist for 16kHz)
-        self.highcut_slider.setValue(6000)  # Default 6000 Hz
+        self.highcut_slider.setMinimum(HIGHCUT_SLIDER_MIN)
+        self.highcut_slider.setMaximum(HIGHCUT_SLIDER_MAX)
+        self.highcut_slider.setValue(HIGHCUT_SLIDER_DEFAULT)
         self.highcut_slider.valueChanged.connect(self.on_highcut_changed)
-        self.highcut_value_label = QLabel("6000")
+        self.highcut_value_label = QLabel(str(int(DEFAULT_FILTER_HIGHCUT)))
         highcut_layout.addWidget(self.highcut_slider)
         highcut_layout.addWidget(self.highcut_value_label)
         filter_layout.addWidget(highcut_label)
@@ -423,7 +479,7 @@ class SRPDemo(QMainWindow):
     
     def get_noise_floor_path(self) -> Path:
         """Get the default path for noise floor file."""
-        return Path(__file__).parent / "temp" / "srp_noise_floor.h5"
+        return Path(__file__).parent / DEFAULT_NOISE_FLOOR_DIR / DEFAULT_NOISE_FLOOR_FILE
     
     def load_noise_floor_auto(self):
         """Automatically load noise floor if it exists."""
@@ -449,7 +505,7 @@ class SRPDemo(QMainWindow):
     
     def load_noise_floor_dialog(self):
         """Open dialog to load noise floor file."""
-        default_path = Path(__file__).parent / "temp"
+        default_path = Path(__file__).parent / DEFAULT_NOISE_FLOOR_DIR
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Noise Floor",
@@ -493,9 +549,9 @@ class SRPDemo(QMainWindow):
             self,
             "Calibration Duration",
             "Enter duration in seconds:",
-            5.0,  # Default
-            1.0,  # Minimum
-            60.0,  # Maximum
+            CALIBRATION_DURATION_DEFAULT,
+            CALIBRATION_DURATION_MIN,
+            CALIBRATION_DURATION_MAX,
             1  # Decimals
         )
         
@@ -568,7 +624,7 @@ class SRPDemo(QMainWindow):
     
     def load_config_dialog(self):
         """Open dialog to load microphone configuration file."""
-        default_path = Path(__file__).parent / "docs" / "mic_config"
+        default_path = Path(__file__).parent / DEFAULT_CONFIG_DIR
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Microphone Configuration",
@@ -767,17 +823,6 @@ class SRPDemo(QMainWindow):
             # PyAudio delivers interleaved data: [c0s0, c1s0, c2s0, ... c0s1, c1s1, ...]
             # So we must reshape to (samples, channels) then transpose
             audio_array = audio_array.reshape(self.frame_size, self.device_channels).T
-            
-            # DEBUG: Print RMS levels for all channels to verify mapping
-            rms = np.sqrt(np.mean(audio_array**2, axis=1))
-            # print(f"RMS: {['{:.3f}'.format(x) for x in rms]}")
-            
-            # Warn if we only see signal on one channel (common configuration error)
-            # We ignore the ignored_channels (playback loopback) for this check
-            check_channels = [i for i in range(len(rms)) if i not in self.config.get('ignore_channels', [])]
-            mic_rms = rms[check_channels]
-
-            print(f"Mic RMS: {['{:.3f}'.format(x) for x in mic_rms]}")
 
             # Filter out ignored channels
             ignore_channels = self.config.get('ignore_channels', [])
@@ -805,8 +850,8 @@ class SRPDemo(QMainWindow):
                 # Ensure non-negative values
                 srp_map = np.maximum(srp_map, 0)
             
-            # Update radial max if needed (use max of current frame * 1.1, or initialize)
-            current_max = np.max(srp_map) * 1.1 if np.max(srp_map) > 0 else 1.0
+            # Update radial max if needed (use max of current frame * multiplier, or initialize)
+            current_max = np.max(srp_map) * RADIAL_MAX_MULTIPLIER if np.max(srp_map) > 0 else 1.0
             if self.radial_max is None:
                 self.radial_max = current_max
             else:

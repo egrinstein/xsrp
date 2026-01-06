@@ -7,17 +7,38 @@ This repository contains the code for the paper:
 
 ## The following functionality is currently implemented:
 
-- Conventional SRP-PHAT in the time domain (taking the DFT, applying the phase transform, followed by the IDFT) as described by Dibiase et al. [1]
-- Conventional SRP-PHAT in the frequency domain (same as above without the IDFT step) as described by Dibiase et al.
-- SRP in the time domain, using temporal cross-correlation without phase transform
-- Parabolic interpolation of the cross-correlation function in time
-- A simple Volumetric SRP approach which projects the average of N-closest correlation values instead of only the one associated with the microphone pair's Time Difference of Arrival (TDOA)
-- Frequency-domain weighting methods for narrowband SRP maps:
-  - **Coherence-based weighting**: Weights frequencies by spatial coherence across microphone pairs (high coherence indicates real sources, low coherence indicates noise/sidelobes)
-  - **Sparsity-based weighting**: Weights frequencies by the sparsity (Gini coefficient) of their SRP maps (sparse/peaked maps indicate real sources, diffuse maps indicate sidelobes)
-  - **Peak-to-Average Ratio (PAR)**: Weights frequencies by the ratio of peak to average SRP values (high PAR indicates dominant peaks)
-- Grid creation functions for Positional Source Localization and Direction of Arrival (DOA) Estimation
-- Visualization tools
+### Core SRP Algorithms
+
+- **Conventional SRP-PHAT in the time domain**: Taking the DFT, applying the phase transform, followed by the IDFT as described by Dibiase et al. [1]
+- **Conventional SRP-PHAT in the frequency domain**: Same as above without the IDFT step, enabling per-frequency processing
+- **SRP with temporal cross-correlation**: Time-domain SRP using cross-correlation without phase transform
+- **Multi-source SRP**: Extension for localizing multiple simultaneous sound sources
+
+### Signal Processing Features
+
+- **Parabolic interpolation**: Fractional sample interpolation of the cross-correlation function for improved time resolution
+- **Volumetric SRP**: Projects the average of N-closest correlation values instead of only the one associated with the microphone pair's Time Difference of Arrival (TDOA), improving robustness
+- **SRP map sharpening**: Exponentiation of SRP maps to enhance peaks and suppress sidelobes
+- **Bandpass filtering**: Preprocessing with configurable high-pass and low-pass filters
+
+### Frequency-Domain Weighting Methods
+
+Frequency-domain weighting methods for narrowband SRP maps (available in frequency-domain mode):
+
+- **Coherence-based weighting**: Weights frequencies by spatial coherence across microphone pairs (high coherence indicates real sources, low coherence indicates noise/sidelobes)
+- **Sparsity-based weighting**: Weights frequencies by the sparsity (Gini coefficient) of their SRP maps (sparse/peaked maps indicate real sources, diffuse maps indicate sidelobes)
+- **Peak-to-Average Ratio (PAR)**: Weights frequencies by the ratio of peak to average SRP values (high PAR indicates dominant peaks)
+
+### Real-Time Processing
+
+- **Streaming SRP**: Frame-based processing for real-time audio streams
+- **Exponential smoothing tracker**: Temporal smoothing of SRP maps and DOA estimates to reduce jitter
+- **Noise floor calibration**: Automatic calibration and subtraction of noise floor SRP maps for improved source detection
+
+### Grid and Visualization
+
+- **Grid creation functions**: Support for Positional Source Localization (2D/3D Cartesian grids) and Direction of Arrival (DOA) Estimation (1D azimuth, 2D azimuth-elevation)
+- **Visualization tools**: Polar plots, cross-correlation visualizations, and SRP map comparisons
 
 ## Installation
 
