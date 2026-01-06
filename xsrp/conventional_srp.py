@@ -79,7 +79,7 @@ class ConventionalSrp(XSrp):
         self.interpolation = interpolation
         self.n_average_samples = n_average_samples
         self.n_dft_bins = n_dft_bins
-        self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
+        self.freq_cutoff = int(freq_cutoff_in_hz*n_dft_bins//fs)
         self.sharpening = sharpening
         self.frequency_weighting = frequency_weighting
         

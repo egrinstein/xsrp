@@ -53,91 +53,33 @@ def calculate_aliasing_limit(mic_positions: np.ndarray, c: float = 343.0, margin
     return suggested_limit
 
 
-def compute_noise_floor(
-    mic_positions: Optional[np.ndarray] = None,
+def record_ambient_noise(
     fs: int = 16000,
-    frame_size: int = 1024,
     duration_seconds: float = 5.0,
-    n_azimuth_cells: int = 72,
-    n_average_samples: int = 5,
-    sharpening: float = 1.0,
-    mode: str = "gcc_phat_time",
-    interpolation: bool = True,
     device_index: Optional[int] = None,
-    ignore_channels: Optional[list] = None,
-    progress_callback: Optional[callable] = None,
-    filter_enabled: bool = True,
-    filter_lowcut: float = 100.0,
-    filter_highcut: float = 7000.0,
-    srp_processor: Optional[ConventionalSrp] = None,
-    frequency_weighting: Optional[str] = None
+    chunk_size: int = 1024,
+    progress_callback: Optional[callable] = None
 ) -> np.ndarray:
-    """Compute noise floor by averaging SRP maps from silent environment.
+    """Record raw audio from the environment for calibration.
     
     Parameters
     ----------
-    mic_positions : np.ndarray, optional
-        Microphone positions of shape (n_mics, n_dimensions). Required if srp_processor is None.
     fs : int
         Sampling rate in Hz
-    frame_size : int
-        Number of samples per frame
     duration_seconds : float
         Duration of recording in seconds
-    n_azimuth_cells : int
-        Number of azimuth cells for DOA grid
-    n_average_samples : int
-        Number of cross-correlation samples to average over
-    sharpening : float
-        Sharpening exponent for SRP map
-    mode : str
-        SRP mode ('gcc_phat_time', 'gcc_phat_freq', 'cross_correlation')
-    interpolation : bool
-        Whether to use fractional sample interpolation
     device_index : int, optional
         Audio device index. If None, uses default input device.
-    ignore_channels : list, optional
-        List of channel indices to ignore
+    chunk_size : int
+        Size of chunks to read from stream
     progress_callback : callable, optional
-        Callback function(current_frame, total_frames) for progress updates
-    filter_enabled : bool, optional
-        Whether to apply bandpass filtering (default True)
-    filter_lowcut : float, optional
-        High-pass cutoff frequency in Hz (default 100.0)
-    filter_highcut : float, optional
-        Low-pass cutoff frequency in Hz (default 7000.0)
-    srp_processor : ConventionalSrp, optional
-        Existing SRP processor to use. If provided, other SRP parameters are ignored.
-    frequency_weighting : str, optional
-        Frequency weighting method for 'gcc_phat_freq' mode (e.g., 'coherence').
+        Callback function(current_chunk, total_chunks)
     
     Returns
     -------
     np.ndarray
-        Averaged noise floor SRP map of shape (n_azimuth_cells,)
+        Raw audio data of shape (n_samples, n_channels)
     """
-    
-    if srp_processor is None:
-        if mic_positions is None:
-            raise ValueError("mic_positions must be provided if srp_processor is None")
-            
-        # For 1D DOA grid, use 2D mic positions (x, y only)
-        mic_positions_2d = mic_positions[:, :2] if mic_positions.shape[1] > 2 else mic_positions
-        
-        # Create SRP processor
-        srp_processor = ConventionalSrp(
-            fs=fs,
-            grid_type="doa_1D",
-            n_grid_cells=n_azimuth_cells,
-            mic_positions=mic_positions_2d,
-            mode=mode,
-            interpolation=interpolation,
-            n_average_samples=n_average_samples,
-            sharpening=sharpening,
-            frequency_weighting=frequency_weighting
-        )
-    
-    # Initialize audio
     audio = pyaudio.PyAudio()
     
     try:
@@ -155,132 +97,194 @@ def compute_noise_floor(
             rate=fs,
             input=True,
             input_device_index=device_index,
-            frames_per_buffer=frame_size,
+            frames_per_buffer=chunk_size,
             stream_callback=None
         )
         
         stream.start_stream()
         
-        # Calculate number of frames
-        n_frames = int(duration_seconds * fs / frame_size)
+        # Calculate number of chunks
+        n_chunks = int(duration_seconds * fs / chunk_size) + 1
         
-        # Accumulate SRP maps
-        srp_maps = []
+        frames = []
         
-        print(f"Recording noise floor for {duration_seconds} seconds ({n_frames} frames)...")
+        print(f"Recording ambient noise for {duration_seconds} seconds...")
         
-        for frame_idx in range(n_frames):
-            # Read audio data
-            audio_data = stream.read(frame_size, exception_on_overflow=False)
-            
-            # Convert to numpy array
-            audio_array = np.frombuffer(audio_data, dtype=np.int16)
-            audio_array = audio_array.astype(np.float32) / 32768.0  # Normalize to [-1, 1]
-            
-            # Reshape to (channels, samples)
-            audio_array = audio_array.reshape(frame_size, device_channels).T
-            
-            # Filter out ignored channels
-            if ignore_channels is not None:
-                valid_channels = [i for i in range(device_channels) if i not in ignore_channels]
-                audio_frame = audio_array[valid_channels, :]
-            else:
-                audio_frame = audio_array
-            
-            # Apply bandpass filter if enabled
-            if filter_enabled:
-                try:
-                    audio_frame = apply_bandpass_filter(
-                        audio_frame,
-                        fs,
-                        lowcut=filter_lowcut,
-                        highcut=filter_highcut
-                    )
-                except Exception as e:
-                    print(f"Filter error during calibration: {e}")
-            
-            # Process frame to get SRP map
-            _, srp_map, _ = srp_processor.forward(audio_frame)
-            srp_maps.append(srp_map)
-            
-            # Call progress callback if provided
-            if progress_callback is not None:
-                progress_callback(frame_idx + 1, n_frames)
+        for i in range(n_chunks):
+            try:
+                data = stream.read(chunk_size, exception_on_overflow=False)
+                # Convert to float32 normalized
+                chunk = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                frames.append(chunk)
+                
+                if progress_callback:
+                    progress_callback(i + 1, n_chunks)
+                    
+            except Exception as e:
+                print(f"Error reading audio chunk: {e}")
+                break
         
         stream.stop_stream()
         stream.close()
         
-        # Average all SRP maps
-        noise_floor = np.mean(srp_maps, axis=0)
+        if not frames:
+            raise RuntimeError("No audio recorded")
+            
+        # Concatenate all chunks
+        raw_data = np.concatenate(frames)
         
-        print(f"Computed noise floor from {len(srp_maps)} frames")
+        # Reshape to (n_samples, n_channels)
+        # stream.read gives interleaved data [c1s1, c2s1, c1s2, c2s2, ...]
+        n_samples = len(raw_data) // device_channels
+        audio_data = raw_data[:n_samples * device_channels].reshape(n_samples, device_channels)
         
-        return noise_floor
+        return audio_data
         
     finally:
         audio.terminate()
 
 
-def save_noise_floor(noise_floor: np.ndarray, file_path: str, metadata: Optional[dict] = None):
-    """Save noise floor SRP map to HDF5 file.
+def compute_noise_floor_map(
+    audio_data: np.ndarray,
+    srp_processor: ConventionalSrp,
+    frame_size: int = 1024,
+    hop_size: int = 512,
+    fs: float = 16000,
+    filter_enabled: bool = True,
+    filter_lowcut: float = 100.0,
+    filter_highcut: float = 7000.0,
+    ignore_channels: Optional[list] = None,
+    progress_callback: Optional[callable] = None
+) -> np.ndarray:
+    """Compute average SRP map from recorded ambient noise audio.
     
     Parameters
     ----------
-    noise_floor : np.ndarray
-        Noise floor SRP map
+    audio_data : np.ndarray
+        Raw audio data of shape (n_samples, n_channels)
+    srp_processor : ConventionalSrp
+        Configured SRP processor to use
+    frame_size : int
+        Processing frame size
+    hop_size : int
+        Processing hop size
+    fs : float
+        Sampling rate
+    filter_enabled : bool
+        Whether to apply bandpass filtering
+    filter_lowcut : float
+        High-pass cutoff
+    filter_highcut : float
+        Low-pass cutoff
+    ignore_channels : list, optional
+        List of channel indices to ignore
+    progress_callback : callable, optional
+        Callback function(current_frame, total_frames). 
+        Should return True to continue, False to cancel.
+    
+    Returns
+    -------
+    np.ndarray
+        Averaged SRP map
+    """
+    n_samples, n_channels = audio_data.shape
+    
+    # Calculate number of frames
+    n_frames = (n_samples - frame_size) // hop_size + 1
+    
+    if n_frames <= 0:
+        raise ValueError("Audio data too short for given frame size")
+    
+    srp_maps = []
+    
+    # Process frames
+    for i in range(n_frames):
+        start_idx = i * hop_size
+        end_idx = start_idx + frame_size
+        
+        # Extract frame: (frame_size, n_channels)
+        frame = audio_data[start_idx:end_idx, :]
+        
+        # Transpose to (n_channels, frame_size) for processing
+        frame_T = frame.T
+        
+        # Filter out ignored channels
+        if ignore_channels is not None:
+            valid_channels = [ch for ch in range(n_channels) if ch not in ignore_channels]
+            frame_proc = frame_T[valid_channels, :]
+        else:
+            frame_proc = frame_T
+            
+        # Apply bandpass filter
+        if filter_enabled:
+            try:
+                frame_proc = apply_bandpass_filter(
+                    frame_proc,
+                    fs,
+                    lowcut=filter_lowcut,
+                    highcut=filter_highcut
+                )
+            except Exception:
+                pass  # Skip filter errors
+        
+        # Compute SRP map
+        _, srp_map, _ = srp_processor.forward(frame_proc)
+        srp_maps.append(srp_map)
+        
+        if progress_callback:
+            # Callback can return False to cancel
+            result = progress_callback(i + 1, n_frames)
+            if result is False:
+                # User cancelled, return partial result or raise
+                break
+    
+    # Average maps
+    if not srp_maps:
+        return np.zeros(srp_processor.n_grid_cells)
+        
+    return np.mean(srp_maps, axis=0)
+
+
+def save_ambient_noise(audio_data: np.ndarray, file_path: str, fs: int):
+    """Save ambient noise audio to HDF5 file.
+    
+    Parameters
+    ----------
+    audio_data : np.ndarray
+        Raw audio data (n_samples, n_channels)
     file_path : str
-        Path to save the HDF5 file
-    metadata : dict, optional
-        Additional metadata to save (e.g., fs, n_azimuth_cells, etc.)
+        Path to save
+    fs : int
+        Sampling rate
     """
     file_path = Path(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     
     with h5py.File(file_path, 'w') as f:
-        # Save noise floor
-        f.create_dataset('noise_floor', data=noise_floor)
-        
-        # Save metadata if provided
-        if metadata is not None:
-            for key, value in metadata.items():
-                if isinstance(value, (str, int, float, bool)):
-                    f.attrs[key] = value
-                elif isinstance(value, np.ndarray):
-                    f.create_dataset(f'metadata/{key}', data=value)
-                else:
-                    # Try to convert to string
-                    f.attrs[key] = str(value)
+        f.create_dataset('ambient_audio', data=audio_data)
+        f.attrs['fs'] = fs
 
 
-def load_noise_floor(file_path: str) -> tuple[np.ndarray, dict]:
-    """Load noise floor SRP map from HDF5 file.
+def load_ambient_noise(file_path: str) -> tuple[Optional[np.ndarray], int]:
+    """Load ambient noise audio from HDF5 file.
     
     Parameters
     ----------
     file_path : str
-        Path to the HDF5 file
-    
+        Path to HDF5 file
+        
     Returns
     -------
-    tuple[np.ndarray, dict]
-        (noise_floor, metadata) where metadata is a dictionary of saved attributes
+    tuple[np.ndarray, int]
+        (audio_data, fs). audio_data may be None if file is old format.
     """
     file_path = Path(file_path)
-    
     if not file_path.exists():
-        raise FileNotFoundError(f"Noise floor file not found: {file_path}")
-    
+        raise FileNotFoundError(f"File not found: {file_path}")
+        
     with h5py.File(file_path, 'r') as f:
-        noise_floor = f['noise_floor'][:]
-        
-        # Load metadata
-        metadata = {}
-        for key in f.attrs.keys():
-            metadata[key] = f.attrs[key]
-        
-        # Load metadata datasets if they exist
-        if 'metadata' in f:
-            for key in f['metadata'].keys():
-                metadata[key] = f['metadata'][key][:]
-    
-    return noise_floor, metadata
+        if 'ambient_audio' in f:
+            return f['ambient_audio'][:], f.attrs.get('fs', 16000)
+        else:
+            # Old format or invalid file
+            return None, 0

@@ -11,12 +11,16 @@ from matplotlib.figure import Figure
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
-    QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton, QSlider,
+    QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton, QSlider,
     QVBoxLayout, QWidget
 )
 
 # Local imports
-from xsrp.calibrate import compute_noise_floor, load_noise_floor, save_noise_floor, calculate_aliasing_limit
+from xsrp.calibrate import (
+    record_ambient_noise, compute_noise_floor_map,
+    save_ambient_noise, load_ambient_noise,
+    calculate_aliasing_limit
+)
 from xsrp.conventional_srp import ConventionalSrp
 from xsrp.grids import UniformSphericalGrid
 from xsrp.streaming import StreamingSrp
@@ -127,7 +131,8 @@ class SRPDemo(QMainWindow):
         self.streaming_srp = None
         self.grid = None
         self.radial_max = None  # Maximum radial limit for polar plot
-        self.noise_floor = None  # Noise floor SRP map for calibration
+        self.noise_floor = None  # Noise floor SRP map for subtraction
+        self.ambient_audio = None # Raw ambient audio data
         self.noise_floor_path = None  # Path to noise floor file
         self.noise_floor_enabled = True  # Whether to subtract noise floor
         
@@ -219,6 +224,7 @@ class SRPDemo(QMainWindow):
         self.averaging_slider.setMaximum(AVERAGING_SLIDER_MAX)
         self.averaging_slider.setValue(AVERAGING_SLIDER_DEFAULT)
         self.averaging_slider.valueChanged.connect(self.on_averaging_changed)
+        self.averaging_slider.sliderReleased.connect(self.on_averaging_released)
         self.averaging_value_label = QLabel(str(DEFAULT_N_AVERAGE_SAMPLES))
         averaging_layout.addWidget(self.averaging_slider)
         averaging_layout.addWidget(self.averaging_value_label)
@@ -233,6 +239,7 @@ class SRPDemo(QMainWindow):
         self.resolution_slider.setMaximum(RESOLUTION_SLIDER_MAX)
         self.resolution_slider.setValue(RESOLUTION_SLIDER_DEFAULT)
         self.resolution_slider.valueChanged.connect(self.on_resolution_changed)
+        self.resolution_slider.sliderReleased.connect(self.on_resolution_released)
         self.resolution_value_label = QLabel(f"{360 / DEFAULT_N_AZIMUTH_CELLS:.1f}°")
         resolution_layout.addWidget(self.resolution_slider)
         resolution_layout.addWidget(self.resolution_value_label)
@@ -247,6 +254,7 @@ class SRPDemo(QMainWindow):
         self.sharpening_slider.setMaximum(SHARPENING_SLIDER_MAX)
         self.sharpening_slider.setValue(SHARPENING_SLIDER_DEFAULT)
         self.sharpening_slider.valueChanged.connect(self.on_sharpening_changed)
+        self.sharpening_slider.sliderReleased.connect(self.on_sharpening_released)
         self.sharpening_value_label = QLabel(f"{DEFAULT_SHARPENING:.1f}")
         sharpening_layout.addWidget(self.sharpening_slider)
         sharpening_layout.addWidget(self.sharpening_value_label)
@@ -271,6 +279,7 @@ class SRPDemo(QMainWindow):
         self.lowcut_slider.setMaximum(LOWCUT_SLIDER_MAX)
         self.lowcut_slider.setValue(LOWCUT_SLIDER_DEFAULT)
         self.lowcut_slider.valueChanged.connect(self.on_lowcut_changed)
+        self.lowcut_slider.sliderReleased.connect(self.on_lowcut_released)
         self.lowcut_value_label = QLabel(str(int(DEFAULT_FILTER_LOWCUT)))
         lowcut_layout.addWidget(self.lowcut_slider)
         lowcut_layout.addWidget(self.lowcut_value_label)
@@ -285,6 +294,7 @@ class SRPDemo(QMainWindow):
         self.highcut_slider.setMaximum(HIGHCUT_SLIDER_MAX)
         self.highcut_slider.setValue(HIGHCUT_SLIDER_DEFAULT)
         self.highcut_slider.valueChanged.connect(self.on_highcut_changed)
+        self.highcut_slider.sliderReleased.connect(self.on_highcut_released)
         self.highcut_value_label = QLabel(str(int(DEFAULT_FILTER_HIGHCUT)))
         highcut_layout.addWidget(self.highcut_slider)
         highcut_layout.addWidget(self.highcut_value_label)
@@ -398,38 +408,61 @@ class SRPDemo(QMainWindow):
             self.streaming_srp.tracker.reset()
     
     def on_averaging_changed(self, value):
-        """Handle averaging slider change."""
+        """Handle averaging slider change (UI update only)."""
         self.n_average_samples = value
         self.averaging_value_label.setText(str(value))
-        # Reinitialize SRP processor if recording (since n_average_samples is set at initialization)
-        if self.is_recording and self.streaming_srp is not None:
-            if not self.initialize_srp_processor():
-                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
     
+    def on_averaging_released(self):
+        """Handle averaging slider release (Logic update)."""
+        if self.is_recording and self.streaming_srp is not None:
+            # Clear noise floor immediately to avoid shape mismatches
+            self.noise_floor = None
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
+                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+            else:
+                # Averaging affects SRP computation, so recompute noise floor
+                if self.should_recompute_noise_floor():
+                    self.recompute_noise_floor(show_progress=True, reason="averaging changed")
+
     def on_resolution_changed(self, value):
-        """Handle resolution slider change."""
-        # Convert degrees to number of azimuth cells
+        """Handle resolution slider change (UI update only)."""
         degrees_per_cell = float(value)
         self.n_azimuth_cells = int(360 / degrees_per_cell)
         self.resolution_value_label.setText(f"{degrees_per_cell:.1f}°")
-        # Reinitialize SRP processor if recording (since n_azimuth_cells is set at initialization)
-        if self.is_recording and self.streaming_srp is not None:
-            if not self.initialize_srp_processor():
-                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
     
+    def on_resolution_released(self):
+        """Handle resolution slider release (Logic update)."""
+        if self.is_recording and self.streaming_srp is not None:
+            # Clear noise floor immediately to avoid shape mismatches (grid size changed)
+            self.noise_floor = None
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
+                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+            else:
+                # Resolution affects grid, so recompute noise floor
+                if self.should_recompute_noise_floor():
+                    self.recompute_noise_floor(show_progress=True, reason="resolution changed")
+
     def on_sharpening_changed(self, value):
-        """Handle sharpening slider change."""
+        """Handle sharpening slider change (UI update only)."""
         self.sharpening = value / 10.0
         self.sharpening_value_label.setText(f"{self.sharpening:.1f}")
-        # Reinitialize SRP processor if recording
-        if self.is_recording and self.streaming_srp is not None:
-            # We can just update the sharpening parameter directly if the processor exists
+    
+    def on_sharpening_released(self):
+        """Handle sharpening slider release (Logic update)."""
+        # Update processor if it exists
+        if self.streaming_srp is not None:
             if hasattr(self.streaming_srp.srp_processor, 'sharpening'):
                 self.streaming_srp.srp_processor.sharpening = self.sharpening
-            else:
-                # If for some reason we can't update directly, reinitialize
-                if not self.initialize_srp_processor():
-                    QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+        else:
+            # If processor doesn't exist, initialize it
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
+                return
+        
+        # Recompute noise floor since sharpening affects it
+        # Clear first to avoid any issues
+        if self.should_recompute_noise_floor():
+            self.noise_floor = None
+            self.recompute_noise_floor(show_progress=True, reason="sharpening changed")
 
     def on_show_tracked_changed(self, state):
         """Handle show tracked position checkbox change."""
@@ -445,20 +478,47 @@ class SRPDemo(QMainWindow):
         self.filter_enabled = state == Qt.Checked
         if self.streaming_srp is not None:
             self.streaming_srp.filter_enabled = self.filter_enabled
+            # Recompute noise floor since filtering affects input
+            if self.should_recompute_noise_floor():
+                self.noise_floor = None
+                self.recompute_noise_floor(show_progress=True, reason="filter enabled changed")
     
     def on_lowcut_changed(self, value):
-        """Handle lowcut (high-pass) slider change."""
+        """Handle lowcut slider change (UI update only)."""
         self.filter_lowcut = float(value)
         self.lowcut_value_label.setText(str(value))
+    
+    def on_lowcut_released(self):
+        """Handle lowcut slider release (Logic update)."""
         if self.streaming_srp is not None:
             self.streaming_srp.filter_lowcut = self.filter_lowcut
-    
+            # Recompute noise floor since filter cutoff affects input
+            if self.should_recompute_noise_floor():
+                self.noise_floor = None
+                self.recompute_noise_floor(show_progress=True, reason="high-pass cutoff changed")
+
     def on_highcut_changed(self, value):
-        """Handle highcut (low-pass) slider change."""
+        """Handle highcut slider change (UI update only)."""
         self.filter_highcut = float(value)
         self.highcut_value_label.setText(str(value))
+
+    def on_highcut_released(self):
+        """Handle highcut slider release (Logic update)."""
         if self.streaming_srp is not None:
             self.streaming_srp.filter_highcut = self.filter_highcut
+            
+            # Sync frequency cutoff with SRP processor to avoid PHAT noise in stop-band
+            if hasattr(self.streaming_srp.srp_processor, 'freq_cutoff'):
+                # Convert cutoff Hz to bin index
+                fs = self.streaming_srp.srp_processor.fs
+                n_dft = self.streaming_srp.srp_processor.n_dft_bins
+                new_cutoff = int(self.filter_highcut * n_dft / fs)
+                self.streaming_srp.srp_processor.freq_cutoff = new_cutoff
+            
+            # Recompute noise floor since filter cutoff affects input
+            if self.should_recompute_noise_floor():
+                self.noise_floor = None
+                self.recompute_noise_floor(show_progress=True, reason="low-pass cutoff changed")
     
     def on_mode_changed(self, index):
         """Handle SRP mode selection change."""
@@ -472,16 +532,28 @@ class SRPDemo(QMainWindow):
             self.frequency_weighting_combo.setCurrentIndex(0)
         # Reinitialize SRP processor if recording
         if self.is_recording and self.streaming_srp is not None:
-            if not self.initialize_srp_processor():
+            # Clear noise floor immediately to avoid shape mismatches
+            self.noise_floor = None
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
                 QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+            else:
+                # Mode affects SRP computation, so recompute noise floor
+                if self.should_recompute_noise_floor():
+                    self.recompute_noise_floor(show_progress=True, reason="SRP mode changed")
     
     def on_frequency_weighting_changed(self, index):
         """Handle frequency weighting selection change."""
         self.frequency_weighting = self.frequency_weighting_combo.currentData()
         # Reinitialize SRP processor if recording (since frequency_weighting is set at initialization)
         if self.is_recording and self.streaming_srp is not None:
-            if not self.initialize_srp_processor():
+            # Clear noise floor immediately to avoid shape mismatches
+            self.noise_floor = None
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
                 QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+            else:
+                # Frequency weighting affects SRP computation, so recompute noise floor
+                if self.should_recompute_noise_floor():
+                    self.recompute_noise_floor(show_progress=True, reason="frequency weighting changed")
     
     def get_noise_floor_path(self) -> Path:
         """Get the default path for noise floor file."""
@@ -492,15 +564,16 @@ class SRPDemo(QMainWindow):
         noise_floor_path = self.get_noise_floor_path()
         if noise_floor_path.exists():
             try:
-                self.noise_floor, metadata = load_noise_floor(str(noise_floor_path))
-                self.noise_floor_path = noise_floor_path
-                self.noise_floor_status_label.setText("Loaded")
-                # Validate that noise floor matches current grid size
-                if hasattr(self, 'n_azimuth_cells'):
-                    if len(self.noise_floor) != self.n_azimuth_cells:
-                        self.noise_floor = None
-                        self.noise_floor_path = None
-                        self.noise_floor_status_label.setText("Size mismatch")
+                self.ambient_audio, fs = load_ambient_noise(str(noise_floor_path))
+                if self.ambient_audio is not None:
+                    self.noise_floor_path = noise_floor_path
+                    self.noise_floor_status_label.setText("Loaded (Audio)")
+                    # Compute map if SRP is ready, otherwise wait
+                    if self.streaming_srp is not None:
+                        self.recompute_noise_floor(show_progress=False, reason="auto-load on startup")
+                else:
+                    self.noise_floor = None
+                    self.noise_floor_status_label.setText("Invalid format")
             except Exception as e:
                 print(f"Failed to load noise floor: {e}")
                 self.noise_floor = None
@@ -521,21 +594,15 @@ class SRPDemo(QMainWindow):
         
         if file_path:
             try:
-                self.noise_floor, metadata = load_noise_floor(file_path)
-                self.noise_floor_path = Path(file_path)
-                self.noise_floor_status_label.setText(f"Loaded: {Path(file_path).name}")
-                
-                # Validate that noise floor matches current grid size
-                if hasattr(self, 'n_azimuth_cells'):
-                    if len(self.noise_floor) != self.n_azimuth_cells:
-                        QMessageBox.warning(
-                            self,
-                            "Size Mismatch",
-                            f"Noise floor has {len(self.noise_floor)} cells, but current grid has {self.n_azimuth_cells} cells."
-                        )
-                        self.noise_floor = None
-                        self.noise_floor_path = None
-                        self.noise_floor_status_label.setText("Size mismatch")
+                self.ambient_audio, fs = load_ambient_noise(file_path)
+                if self.ambient_audio is not None:
+                    self.noise_floor_path = Path(file_path)
+                    self.noise_floor_status_label.setText(f"Loaded: {Path(file_path).name}")
+                    # Compute map if SRP is ready, otherwise wait
+                    if self.streaming_srp is not None:
+                        self.recompute_noise_floor(show_progress=True, reason="noise floor loaded")
+                else:
+                     QMessageBox.warning(self, "Invalid File", "File does not contain valid ambient audio data.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load noise floor: {e}")
                 self.noise_floor = None
@@ -572,57 +639,36 @@ class SRPDemo(QMainWindow):
         # Show progress dialog
         progress_dialog = QMessageBox(self)
         progress_dialog.setWindowTitle("Calibrating Noise Floor")
-        progress_dialog.setText(f"Recording noise floor for {duration} seconds...\nPlease ensure the environment is silent.")
+        progress_dialog.setText(f"Recording ambient noise for {duration} seconds...\nPlease ensure the environment is silent.")
         progress_dialog.setStandardButtons(QMessageBox.NoButton)
         progress_dialog.setModal(False)
         progress_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
         progress_dialog.show()
         QApplication.processEvents()
         
-        # Ensure SRP processor is initialized (uses current settings like mode, weighting, etc.)
-        if self.streaming_srp is None:
-            if not self.initialize_srp_processor():
-                progress_dialog.hide()
-                progress_dialog.deleteLater()
-                QMessageBox.warning(self, "Error", "Failed to initialize SRP processor for calibration")
-                return
-        
         try:
-            # Compute noise floor using the current SRP processor configuration
-            noise_floor = compute_noise_floor(
-                srp_processor=self.streaming_srp.srp_processor,
+            # Record raw ambient noise
+            self.ambient_audio = record_ambient_noise(
                 fs=self.fs,
-                frame_size=self.frame_size,
                 duration_seconds=duration,
-                # These parameters are now derived from srp_processor if provided, 
-                # but we pass them for compatibility/safety or if they are needed for recording setup
-                n_azimuth_cells=self.n_azimuth_cells, 
                 device_index=device_index,
-                ignore_channels=self.config.get('ignore_channels', []),
-                progress_callback=lambda current, total: QApplication.processEvents(),
-                filter_enabled=self.filter_enabled,
-                filter_lowcut=self.filter_lowcut,
-                filter_highcut=self.filter_highcut
+                chunk_size=self.frame_size,
+                progress_callback=lambda c, t: QApplication.processEvents()
             )
             
-            # Save noise floor
+            # Save raw audio
             noise_floor_path = self.get_noise_floor_path()
-            metadata = {
-                'fs': self.fs,
-                'n_azimuth_cells': self.n_azimuth_cells,
-                'n_average_samples': self.n_average_samples,
-                'sharpening': self.sharpening,
-                'duration_seconds': duration
-            }
-            save_noise_floor(noise_floor, str(noise_floor_path), metadata)
+            save_ambient_noise(self.ambient_audio, str(noise_floor_path), self.fs)
+            self.noise_floor_path = noise_floor_path
+            
+            # Compute the actual noise floor map using current settings
+            # Show progress since recording is done
+            self.recompute_noise_floor(show_progress=True, reason="calibration completed")
             
             # Close progress dialog properly
             progress_dialog.hide()
             progress_dialog.deleteLater()
             QApplication.processEvents()
-            
-            # Auto-load the noise floor that was just saved
-            self.load_noise_floor_auto()
             
             QMessageBox.information(self, "Success", f"Noise floor calibrated and saved to {noise_floor_path.name}")
             
@@ -633,6 +679,121 @@ class SRPDemo(QMainWindow):
             QApplication.processEvents()
             
             QMessageBox.critical(self, "Error", f"Failed to calibrate noise floor: {e}")
+            self.ambient_audio = None
+            self.noise_floor = None
+            self.noise_floor_status_label.setText("Calibration failed")
+    
+    def should_recompute_noise_floor(self) -> bool:
+        """Check if noise floor should be recomputed based on current state.
+        
+        Returns
+        -------
+        bool
+            True if ambient audio is loaded and noise floor subtraction is enabled
+        """
+        return (self.ambient_audio is not None and 
+                self.noise_floor_enabled and
+                self.streaming_srp is not None)
+    
+    def recompute_noise_floor(self, show_progress=True, reason="settings changed"):
+        """Recompute noise floor map from ambient audio using current SRP settings.
+        
+        This is a modular method that provides consistent notification interface
+        for all noise floor recomputation scenarios.
+        
+        Parameters
+        ----------
+        show_progress : bool
+            Whether to show a progress dialog during computation
+        reason : str
+            Reason for recomputation (for user notification)
+        """
+        if self.ambient_audio is None:
+            return
+
+        # Ensure SRP processor is initialized
+        if self.streaming_srp is None:
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
+                print("Failed to initialize SRP processor for noise floor computation")
+                return
+
+        # Reset noise floor to prevent shape mismatch errors while recomputing
+        self.noise_floor = None
+
+        # Calculate number of frames for progress estimation
+        n_samples, n_channels = self.ambient_audio.shape
+        n_frames = (n_samples - self.frame_size) // self.hop_size + 1
+        
+        if n_frames <= 0:
+            QMessageBox.warning(self, "Error", "Audio data too short for noise floor computation")
+            return
+
+        # Show progress dialog if requested
+        progress_dialog = None
+        if show_progress:
+            progress_dialog = QProgressDialog(
+                f"Recomputing noise floor map...\nReason: {reason}",
+                "Cancel",
+                0,
+                n_frames,
+                self
+            )
+            progress_dialog.setWindowTitle("Recomputing Noise Floor")
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            progress_dialog.setMinimumDuration(0)  # Show immediately
+            progress_dialog.setValue(0)
+            QApplication.processEvents()
+
+        try:
+            # Progress callback for compute_noise_floor_map
+            cancelled = [False]  # Use list to allow modification in nested function
+            
+            def progress_callback(current, total):
+                if show_progress and progress_dialog:
+                    if progress_dialog.wasCanceled():
+                        cancelled[0] = True
+                        return False  # Signal to stop
+                    progress_pct = int(100 * current / total) if total > 0 else 0
+                    progress_dialog.setValue(current)
+                    progress_dialog.setLabelText(
+                        f"Recomputing noise floor map...\n"
+                        f"Reason: {reason}\n"
+                        f"Processing frame {current}/{total} ({progress_pct}%)"
+                    )
+                    QApplication.processEvents()
+                return True  # Continue processing
+            
+            # Compute noise floor with progress updates
+            self.noise_floor = compute_noise_floor_map(
+                audio_data=self.ambient_audio,
+                srp_processor=self.streaming_srp.srp_processor,
+                frame_size=self.frame_size,
+                hop_size=self.hop_size,
+                fs=self.fs,
+                filter_enabled=self.filter_enabled,
+                filter_lowcut=self.filter_lowcut,
+                filter_highcut=self.filter_highcut,
+                ignore_channels=self.config.get('ignore_channels', []) if self.config else [],
+                progress_callback=progress_callback
+            )
+            
+            # Check if cancelled
+            if cancelled[0] or (show_progress and progress_dialog and progress_dialog.wasCanceled()):
+                self.noise_floor = None
+                self.noise_floor_status_label.setText("Cancelled")
+            else:
+                self.noise_floor_status_label.setText("Loaded & Computed")
+            
+        except Exception as e:
+            print(f"Error recomputing noise floor: {e}")
+            self.noise_floor = None
+            self.noise_floor_status_label.setText("Computation failed")
+            if show_progress:
+                QMessageBox.warning(self, "Error", f"Failed to recompute noise floor: {e}")
+        finally:
+            if progress_dialog is not None:
+                progress_dialog.close()
+                QApplication.processEvents()
     
     def load_config_dialog(self):
         """Open dialog to load microphone configuration file."""
@@ -719,8 +880,15 @@ class SRPDemo(QMainWindow):
         
         return True
     
-    def initialize_srp_processor(self):
-        """Initialize the SRP processor with current configuration."""
+    def initialize_srp_processor(self, suppress_noise_floor_recompute=False):
+        """Initialize the SRP processor with current configuration.
+        
+        Parameters
+        ----------
+        suppress_noise_floor_recompute : bool
+            If True, skip automatic noise floor recomputation (used when
+            recomputation will be triggered separately)
+        """
         if self.mic_positions is None:
             return False
         
@@ -746,7 +914,8 @@ class SRPDemo(QMainWindow):
             interpolation=False,  # Disabled as requested
             n_average_samples=self.n_average_samples,  # Volumetric: average over N samples
             sharpening=self.sharpening,
-            frequency_weighting=frequency_weighting
+            frequency_weighting=frequency_weighting,
+            freq_cutoff_in_hz=self.filter_highcut  # Sync with filter setting
         )
         
         # Create tracker with current smoothing alpha
@@ -771,11 +940,10 @@ class SRPDemo(QMainWindow):
         # Reset radial max when reinitializing
         self.radial_max = None
         
-        # Reload noise floor if grid size changed
-        if self.noise_floor is not None:
-            if len(self.noise_floor) != self.n_azimuth_cells:
-                # Grid size changed, need to reload or clear noise floor
-                self.load_noise_floor_auto()
+        # Recompute noise floor map with new SRP settings if ambient audio is loaded
+        # Only if not suppressed (suppressed when recomputation will be triggered separately)
+        if not suppress_noise_floor_recompute and self.ambient_audio is not None:
+            self.recompute_noise_floor(show_progress=False, reason="SRP processor initialized")
         
         return True
     
@@ -791,15 +959,75 @@ class SRPDemo(QMainWindow):
         if not self.validate_config():
             return
         
-        if not self.initialize_srp_processor():
-            QMessageBox.warning(self, "Error", "Failed to initialize SRP processor")
-            return
-        
-        device_index = self.device_combo.currentData()
-        device_info = self.audio.get_device_info_by_index(device_index)
-        self.device_channels = device_info['maxInputChannels']
+        # Show initialization progress
+        init_progress = QProgressDialog("Initializing SRP processor...", None, 0, 0, self)
+        init_progress.setWindowTitle("Starting Recording")
+        init_progress.setWindowModality(Qt.WindowModal)
+        init_progress.setMinimumDuration(0)
+        init_progress.setValue(0)
+        QApplication.processEvents()
         
         try:
+            init_progress.setLabelText("Creating SRP processor...")
+            QApplication.processEvents()
+            
+            if not self.initialize_srp_processor(suppress_noise_floor_recompute=True):
+                init_progress.close()
+                QMessageBox.warning(self, "Error", "Failed to initialize SRP processor")
+                return
+            
+            # Only recompute noise floor if it hasn't been computed yet
+            # (e.g., if ambient audio was loaded but SRP processor wasn't initialized)
+            # If it was already computed (e.g., after calibration), skip recomputation
+            if self.should_recompute_noise_floor() and self.noise_floor is None:
+                # Calculate frames for progress
+                n_samples, n_channels = self.ambient_audio.shape
+                n_frames = (n_samples - self.frame_size) // self.hop_size + 1
+                init_progress.setMaximum(n_frames)
+                init_progress.setValue(0)
+                
+                # Create a progress callback that updates our dialog
+                def noise_floor_progress(current, total):
+                    progress_pct = int(100 * current / total) if total > 0 else 0
+                    init_progress.setValue(current)
+                    init_progress.setLabelText(
+                        f"Computing noise floor map...\n"
+                        f"Processing frame {current}/{total} ({progress_pct}%)"
+                    )
+                    QApplication.processEvents()
+                    return not init_progress.wasCanceled()
+                
+                # Compute noise floor directly with our progress callback
+                try:
+                    cancelled = [False]
+                    self.noise_floor = compute_noise_floor_map(
+                        audio_data=self.ambient_audio,
+                        srp_processor=self.streaming_srp.srp_processor,
+                        frame_size=self.frame_size,
+                        hop_size=self.hop_size,
+                        fs=self.fs,
+                        filter_enabled=self.filter_enabled,
+                        filter_lowcut=self.filter_lowcut,
+                        filter_highcut=self.filter_highcut,
+                        ignore_channels=self.config.get('ignore_channels', []) if self.config else [],
+                        progress_callback=noise_floor_progress
+                    )
+                    if init_progress.wasCanceled():
+                        self.noise_floor = None
+                        self.noise_floor_status_label.setText("Cancelled")
+                    else:
+                        self.noise_floor_status_label.setText("Loaded & Computed")
+                except Exception as e:
+                    print(f"Error computing noise floor during start: {e}")
+                    self.noise_floor = None
+            
+            init_progress.setLabelText("Opening audio stream...")
+            QApplication.processEvents()
+            
+            device_index = self.device_combo.currentData()
+            device_info = self.audio.get_device_info_by_index(device_index)
+            self.device_channels = device_info['maxInputChannels']
+            
             # Open audio stream
             self.stream = self.audio.open(
                 format=pyaudio.paInt16,
@@ -811,6 +1039,9 @@ class SRPDemo(QMainWindow):
                 stream_callback=None
             )
             
+            init_progress.setLabelText("Starting audio stream...")
+            QApplication.processEvents()
+            
             self.stream.start_stream()
             self.is_recording = True
             self.start_stop_button.setText("Stop Recording")
@@ -819,7 +1050,10 @@ class SRPDemo(QMainWindow):
             # Start processing timer (process every frame)
             self.timer.start(int(1000 * self.hop_size / self.fs))  # Update rate in ms
             
+            init_progress.close()
+            
         except Exception as e:
+            init_progress.close()
             QMessageBox.critical(self, "Error", f"Failed to start recording: {e}")
             self.stop_recording()
     
@@ -872,9 +1106,17 @@ class SRPDemo(QMainWindow):
 
             # Subtract noise floor if available and enabled
             if self.noise_floor_enabled and self.noise_floor is not None:
-                srp_map = srp_map - self.noise_floor
-                # Ensure non-negative values
-                srp_map = np.maximum(srp_map, 0)
+                # Ensure shapes match before subtraction
+                # If shapes don't match, clear noise floor (likely due to parameter change)
+                if srp_map.shape == self.noise_floor.shape:
+                    srp_map = srp_map - self.noise_floor
+                    # Ensure non-negative values
+                    srp_map = np.maximum(srp_map, 0)
+                else:
+                    # Shape mismatch - clear noise floor to prevent errors
+                    # This can happen if parameters changed but recomputation hasn't finished yet
+                    # The noise floor will be recomputed by the parameter change handler
+                    self.noise_floor = None
             
             # Update radial max if needed (use max of current frame * multiplier, or initialize)
             current_max = np.max(srp_map) * RADIAL_MAX_MULTIPLIER if np.max(srp_map) > 0 else 1.0

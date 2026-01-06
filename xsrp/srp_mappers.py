@@ -152,8 +152,17 @@ def frequency_projector(mic_positions: np.array,
     if sum_pairs:
         # Sum the cross-correlation values of each microphone pair, but keep frequency dimension
         # srp_map shape: (n_cells, n_mics, n_mics, n_freqs)
-        # After sum(axis=1).sum(axis=1): (n_cells, n_freqs)
-        per_freq_srp_map = srp_map.sum(axis=1).sum(axis=1)  # Sum mic pairs, keep freq dim
+        
+        # Calculate the sum including diagonal
+        per_freq_srp_map_all = srp_map.sum(axis=1).sum(axis=1)  # Sum mic pairs, keep freq dim
+        
+        # Calculate the trace (sum of diagonal elements: auto-correlations)
+        # diagonal elements are at indices [:, i, i, :]
+        trace = np.trace(srp_map, axis1=1, axis2=2)
+        
+        # Subtract trace to keep only cross-correlations
+        per_freq_srp_map = per_freq_srp_map_all - trace
+        
         per_freq_srp_map = np.real(per_freq_srp_map)
         
         # Apply frequency weights if provided
