@@ -7,6 +7,7 @@ from .grids import (
 )
 from .signal_features.cross_correlation import cross_correlation
 from .signal_features.gcc_phat import gcc_phat
+from .signal_features.frequency_weighting import compute_frequency_weights
 
 from .srp_mappers import (
     temporal_projector,
@@ -45,6 +46,9 @@ class ConventionalSrp(XSrp):
         The number of cross-correlation samples to average over. Defaults to 1.
     sharpening : float, optional
         The exponent to raise the SRP map to. Defaults to 1.
+    frequency_weighting : str, optional
+        Frequency weighting method: None, 'coherence', 'sparsity', or 'par'.
+        Only applies when mode='gcc_phat_freq'. Defaults to None.
         
     """
     
@@ -55,7 +59,8 @@ class ConventionalSrp(XSrp):
                  n_average_samples=1,
                  n_dft_bins=1024,
                  freq_cutoff_in_hz=None,
-                 sharpening=1.0):
+                 sharpening=1.0,
+                 frequency_weighting=None):
         if grid_type not in ["2D", "3D", "doa_1D", "doa_2D"]:
             raise ValueError("grid_type must be one of '2D', '3D', 'doa_1D', 'doa_2D'")
         
@@ -76,8 +81,22 @@ class ConventionalSrp(XSrp):
         self.n_dft_bins = n_dft_bins
         self.freq_cutoff = freq_cutoff_in_hz*n_dft_bins//fs
         self.sharpening = sharpening
+        self.frequency_weighting = frequency_weighting
+        
+        # Validate frequency_weighting parameter
+        if frequency_weighting is not None:
+            if mode != "gcc_phat_freq":
+                raise ValueError("frequency_weighting only applies when mode='gcc_phat_freq'")
+            if frequency_weighting not in [None, 'coherence', 'sparsity', 'par']:
+                raise ValueError(
+                    f"frequency_weighting must be one of None, 'coherence', 'sparsity', 'par'. "
+                    f"Got: {frequency_weighting}"
+                )
 
         super().__init__(fs, mic_positions, room_dims, c)
+        
+        # Store frequency-domain signals when needed for coherence weighting
+        self._mic_signals_dft = None
     
     def create_initial_candidate_grid(self, room_dims):
         if self.grid_type in ["2D", "3D"]:
@@ -93,6 +112,9 @@ class ConventionalSrp(XSrp):
         elif self.mode == "gcc_phat_time":
             return gcc_phat(mic_signals, abs=True, return_lags=False, ifft=True)
         elif self.mode == "gcc_phat_freq":
+            # Store frequency-domain signals for coherence weighting if needed
+            if self.frequency_weighting == 'coherence':
+                self._mic_signals_dft = np.fft.rfft(mic_signals, n=self.n_dft_bins)
             return gcc_phat(mic_signals, abs=True, return_lags=False, ifft=False,
                             n_dft_bins=self.n_dft_bins)
 
@@ -102,12 +124,47 @@ class ConventionalSrp(XSrp):
                        signal_features: np.array):
 
         if self.mode == "gcc_phat_freq":
+            # Compute frequency weights if weighting is enabled
+            frequency_weights = None
+            if self.frequency_weighting is not None:
+                # First, compute per-frequency SRP maps (without weights) to compute weights
+                # Use return_per_freq to get per-frequency maps efficiently
+                _, per_freq_srp_maps = frequency_projector(
+                    mic_positions,
+                    candidate_grid,
+                    signal_features,
+                    self.fs,
+                    freq_cutoff=self.freq_cutoff,
+                    frequency_weights=None,  # No weights yet
+                    return_per_freq=True
+                )
+                
+                # Truncate mic_signals_dft to match freq_cutoff if needed
+                mic_signals_dft_truncated = None
+                if self._mic_signals_dft is not None:
+                    # freq_cutoff is the number of bins to keep (0 to freq_cutoff-1)
+                    # _mic_signals_dft has shape (n_mics, n_dft_bins//2 + 1)
+                    # We need to truncate to [:freq_cutoff] if freq_cutoff is less than full size
+                    n_full_bins = self._mic_signals_dft.shape[1]
+                    if self.freq_cutoff is not None and self.freq_cutoff < n_full_bins:
+                        mic_signals_dft_truncated = self._mic_signals_dft[:, :self.freq_cutoff]
+                    else:
+                        mic_signals_dft_truncated = self._mic_signals_dft
+                
+                # Compute weights based on the method
+                frequency_weights = compute_frequency_weights(
+                    per_freq_srp_maps,
+                    mic_signals_dft=mic_signals_dft_truncated,
+                    method=self.frequency_weighting
+                )
+            
             srp_map = frequency_projector(
                 mic_positions,
                 candidate_grid,
                 signal_features,
                 self.fs,
-                freq_cutoff=self.freq_cutoff)
+                freq_cutoff=self.freq_cutoff,
+                frequency_weights=frequency_weights)
         else:
             srp_map = temporal_projector(
                 mic_positions,

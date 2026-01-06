@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 import numpy as np
 from xsrp.grids import UniformSphericalGrid
 
@@ -72,16 +73,26 @@ def plot_polar_srp_map(
         azimuth_tracked = np.arctan2(tracked_position[1], tracked_position[0])
         # Find corresponding SRP value
         grid_positions = grid.asarray()
+        # Handle dimension mismatch: grid is 2D for 1D DOA, but tracked_position might be 3D
+        tracked_pos_2d = tracked_position[:grid_positions.shape[1]]
         # Find closest grid point
-        distances = np.linalg.norm(grid_positions - tracked_position, axis=1)
+        distances = np.linalg.norm(grid_positions - tracked_pos_2d, axis=1)
         closest_idx = np.argmin(distances)
         srp_value = srp_map[closest_idx]
         
-        # Use the same color as the plot line
-        ax.plot(azimuth_tracked, srp_value, 'o', color=line_color, 
-                markersize=10, markeredgecolor='white', markeredgewidth=1.5,
-                label='Tracked position')
-        ax.legend()
+        # Draw arrow from origin to estimated direction
+        ax.annotate('', 
+                   xy=(azimuth_tracked, srp_value),  # Arrow tip at estimated position
+                   xytext=(azimuth_tracked, 0),      # Arrow start at origin
+                   arrowprops=dict(arrowstyle='->', 
+                                 color=line_color, 
+                                 lw=2.5))
+        
+        # Create a proxy line for the legend (to represent the arrow)
+        arrow_proxy = mlines.Line2D([], [], color=line_color, linewidth=2.5,
+                                    marker='>', markersize=10, linestyle='-',
+                                    label='Tracked position')
+        ax.legend(handles=[arrow_proxy])
     
     if show:
         plt.tight_layout()

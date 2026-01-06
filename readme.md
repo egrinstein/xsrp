@@ -12,6 +12,10 @@ This repository contains the code for the paper:
 - SRP in the time domain, using temporal cross-correlation without phase transform
 - Parabolic interpolation of the cross-correlation function in time
 - A simple Volumetric SRP approach which projects the average of N-closest correlation values instead of only the one associated with the microphone pair's Time Difference of Arrival (TDOA)
+- Frequency-domain weighting methods for narrowband SRP maps:
+  - **Coherence-based weighting**: Weights frequencies by spatial coherence across microphone pairs (high coherence indicates real sources, low coherence indicates noise/sidelobes)
+  - **Sparsity-based weighting**: Weights frequencies by the sparsity (Gini coefficient) of their SRP maps (sparse/peaked maps indicate real sources, diffuse maps indicate sidelobes)
+  - **Peak-to-Average Ratio (PAR)**: Weights frequencies by the ratio of peak to average SRP values (high PAR indicates dominant peaks)
 - Grid creation functions for Positional Source Localization and Direction of Arrival (DOA) Estimation
 - Visualization tools
 

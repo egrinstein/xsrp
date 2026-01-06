@@ -89,6 +89,12 @@ class SRPDemo(QMainWindow):
         self.filter_lowcut = 200.0  # High-pass cutoff in Hz
         self.filter_highcut = 6000.0  # Low-pass cutoff in Hz
         
+        # SRP mode parameter
+        self.srp_mode = "gcc_phat_freq"  # 'gcc_phat_time' or 'gcc_phat_freq'
+        
+        # Frequency weighting parameter
+        self.frequency_weighting = None  # None, 'coherence', 'sparsity', 'par'
+        
         # Timer for real-time updates
         self.timer = QTimer()
         self.timer.timeout.connect(self.process_audio_frame)
@@ -232,6 +238,29 @@ class SRPDemo(QMainWindow):
         filter_group.setLayout(filter_layout)
         controls_layout.addWidget(filter_group)
         
+        # SRP mode selection
+        mode_label = QLabel("SRP Mode:")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Time Domain", "gcc_phat_time")
+        self.mode_combo.addItem("Frequency Domain", "gcc_phat_freq")
+        self.mode_combo.setCurrentIndex(1)  # Default to frequency domain
+        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
+        controls_layout.addWidget(mode_label)
+        controls_layout.addWidget(self.mode_combo)
+        
+        # Frequency weighting selection
+        frequency_weighting_label = QLabel("Frequency Weighting:")
+        self.frequency_weighting_combo = QComboBox()
+        self.frequency_weighting_combo.addItem("None", None)
+        self.frequency_weighting_combo.addItem("Coherence", "coherence")
+        self.frequency_weighting_combo.addItem("Sparsity", "sparsity")
+        self.frequency_weighting_combo.addItem("PAR", "par")
+        self.frequency_weighting_combo.setCurrentIndex(0)  # Default to None
+        self.frequency_weighting_combo.setEnabled(True)  # Enabled by default (freq mode is default)
+        self.frequency_weighting_combo.currentIndexChanged.connect(self.on_frequency_weighting_changed)
+        controls_layout.addWidget(frequency_weighting_label)
+        controls_layout.addWidget(self.frequency_weighting_combo)
+        
         # Show tracked position toggle
         self.show_tracked_checkbox = QCheckBox("Show Tracked Position")
         self.show_tracked_checkbox.setChecked(True)  # Default to showing
@@ -368,6 +397,29 @@ class SRPDemo(QMainWindow):
         """Handle highcut (low-pass) slider change."""
         self.filter_highcut = float(value)
         self.highcut_value_label.setText(str(value))
+    
+    def on_mode_changed(self, index):
+        """Handle SRP mode selection change."""
+        self.srp_mode = self.mode_combo.currentData()
+        # Enable/disable frequency weighting based on mode
+        is_freq_mode = self.srp_mode == "gcc_phat_freq"
+        self.frequency_weighting_combo.setEnabled(is_freq_mode)
+        # If switching away from freq mode, disable frequency weighting
+        if not is_freq_mode:
+            self.frequency_weighting = None
+            self.frequency_weighting_combo.setCurrentIndex(0)
+        # Reinitialize SRP processor if recording
+        if self.is_recording and self.streaming_srp is not None:
+            if not self.initialize_srp_processor():
+                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
+    
+    def on_frequency_weighting_changed(self, index):
+        """Handle frequency weighting selection change."""
+        self.frequency_weighting = self.frequency_weighting_combo.currentData()
+        # Reinitialize SRP processor if recording (since frequency_weighting is set at initialization)
+        if self.is_recording and self.streaming_srp is not None:
+            if not self.initialize_srp_processor():
+                QMessageBox.warning(self, "Error", "Failed to reinitialize SRP processor")
     
     def get_noise_floor_path(self) -> Path:
         """Get the default path for noise floor file."""
@@ -598,15 +650,20 @@ class SRPDemo(QMainWindow):
         
         # Create SRP processor with volumetric approach (n_average_samples > 1)
         # Volumetric SRP averages over N-closest correlation values for better robustness
+        # Use selected mode (time or frequency domain)
+        # Frequency weighting only applies in frequency domain mode
+        frequency_weighting = self.frequency_weighting if self.srp_mode == "gcc_phat_freq" else None
+        
         srp_processor = ConventionalSrp(
             fs=self.fs,
             grid_type="doa_1D",
             n_grid_cells=self.n_azimuth_cells,
             mic_positions=mic_positions_2d,
-            mode="gcc_phat_time",
-            interpolation=True,
+            mode=self.srp_mode,
+            interpolation=False,  # Disabled as requested
             n_average_samples=self.n_average_samples,  # Volumetric: average over N samples
-            sharpening=self.sharpening
+            sharpening=self.sharpening,
+            frequency_weighting=frequency_weighting
         )
         
         # Create tracker with current smoothing alpha

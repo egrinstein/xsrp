@@ -108,7 +108,9 @@ def frequency_projector(mic_positions: np.array,
                         cross_correlation_matrix: np.array,
                         fs: float,
                         sum_pairs: bool = True,
-                        freq_cutoff: int = None):
+                        freq_cutoff: int = None,
+                        frequency_weights: np.array = None,
+                        return_per_freq: bool = False):
     """
     Creates a Steered Response Power (SRP) likelihood map by steering the frequency domain
     cross-correlation between microphone pairs to the corresponding grid cell and frequency bin.    
@@ -124,10 +126,16 @@ def frequency_projector(mic_positions: np.array,
             of each microphone pair and frequency. Defaults to True.
         freq_cutoff (int, optional): The frequency bin number from which to cutoff
             the cross-correlation values. Defaults to None.
+        frequency_weights (np.array, optional): Array of shape (n_frequencies,) to weight
+            each frequency bin before summation. Defaults to None (uniform weighting).
+        return_per_freq (bool, optional): If True, also return per-frequency SRP maps.
+            Defaults to False.
 
     Returns:
         srp_map (np.array): Array of shape (n_cells, n_mics, n_mics) if sum_pairs
             is False, else array of shape (n_cells,)
+        per_freq_srp_map (np.array, optional): Array of shape (n_cells, n_frequencies)
+            if return_per_freq is True. Only returned if return_per_freq is True.
     """
 
     n_freqs = cross_correlation_matrix.shape[-1]
@@ -139,13 +147,34 @@ def frequency_projector(mic_positions: np.array,
 
     if freq_cutoff is not None:
         srp_map = srp_map[..., :freq_cutoff]
+        n_freqs = freq_cutoff
 
     if sum_pairs:
-        # Sum the cross-correlation values of each microphone pair and frequency
-        #srp_map = srp_map.sum(axis=1).sum(axis=1)[:, 2]
-        srp_map = srp_map.sum(axis=1).sum(axis=1).sum(axis=1)
+        # Sum the cross-correlation values of each microphone pair, but keep frequency dimension
+        # srp_map shape: (n_cells, n_mics, n_mics, n_freqs)
+        # After sum(axis=1).sum(axis=1): (n_cells, n_freqs)
+        per_freq_srp_map = srp_map.sum(axis=1).sum(axis=1)  # Sum mic pairs, keep freq dim
+        per_freq_srp_map = np.real(per_freq_srp_map)
+        
+        # Apply frequency weights if provided
+        if frequency_weights is not None:
+            if len(frequency_weights) != n_freqs:
+                raise ValueError(
+                    f"frequency_weights length ({len(frequency_weights)}) must match "
+                    f"number of frequency bins ({n_freqs})"
+                )
+            # Apply weights: (n_cells, n_freqs) * (n_freqs,) -> (n_cells, n_freqs)
+            per_freq_srp_map = per_freq_srp_map * frequency_weights[np.newaxis, :]
+        
+        # Sum across frequencies to get final SRP map
+        srp_map = per_freq_srp_map.sum(axis=1)
+        
+        if return_per_freq:
+            return srp_map, per_freq_srp_map
+    else:
+        srp_map = np.real(srp_map)
     
-    return np.real(srp_map)
+    return srp_map
 
 
 def _parabolic_interpolation(x_value, y):
