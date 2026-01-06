@@ -24,11 +24,17 @@ class StreamingSrp:
     """
     
     def __init__(self, srp_processor: XSrp, tracker: Tracker,
-                 frame_size: int, hop_size: int = None):
+                 frame_size: int, hop_size: int = None, window_func=None):
         self.srp_processor = srp_processor
         self.tracker = tracker
         self.frame_size = frame_size
         self.hop_size = hop_size if hop_size is not None else frame_size
+        
+        # Pre-compute window if a function is provided
+        if window_func is not None:
+            self.window = window_func(frame_size)
+        else:
+            self.window = None
         
         # Validate that SRP processor is configured for DOA
         # Check if grid_type attribute exists (for ConventionalSrp and subclasses)
@@ -37,6 +43,41 @@ class StreamingSrp:
                 raise ValueError(
                     "StreamingSrp requires SRP processor with grid_type 'doa_1D' or 'doa_2D'"
                 )
+                
+        # Internal buffer for streaming
+        self.buffer = None
+
+    def process_chunk(self, audio_chunk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Process an arbitrary chunk of audio data, buffering as needed.
+        
+        Parameters
+        ----------
+        audio_chunk : np.ndarray
+            Audio chunk of shape (n_mics, n_samples)
+            
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            (smoothed_srp_map, estimated_doa) or (None, None) if not enough data
+        """
+        n_mics, n_samples = audio_chunk.shape
+        
+        # Initialize buffer if needed
+        if self.buffer is None:
+            self.buffer = np.zeros((n_mics, self.frame_size), dtype=audio_chunk.dtype)
+            
+        # Roll buffer and add new samples
+        # Note: This assumes n_samples <= frame_size. If chunk is larger, we should process multiple times,
+        # but for typical real-time use, chunk <= frame_size.
+        if n_samples >= self.frame_size:
+            # If chunk is larger than frame, take the last frame_size samples
+            self.buffer = audio_chunk[:, -self.frame_size:]
+        else:
+            self.buffer = np.roll(self.buffer, -n_samples, axis=1)
+            self.buffer[:, -n_samples:] = audio_chunk
+            
+        # Process the current full buffer
+        return self.process_frame(self.buffer)
     
     def process_frame(self, audio_frame: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Process a single audio frame.
@@ -53,6 +94,11 @@ class StreamingSrp:
             - smoothed_srp_map: Smoothed SRP map values for the grid
             - estimated_doa: DOA estimate from the smoothed map (cartesian unit vector or azimuth)
         """
+        # Apply windowing if configured
+        if self.window is not None:
+            # Broadcast window to all channels: (n_mics, frame_size) * (frame_size,)
+            audio_frame = audio_frame * self.window
+
         # Process frame with SRP
         _, srp_map, _ = self.srp_processor.forward(audio_frame)
         

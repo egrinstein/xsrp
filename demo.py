@@ -135,6 +135,7 @@ class SRPDemo(QMainWindow):
         # Processing parameters
         self.fs = DEFAULT_SAMPLING_RATE
         self.frame_size = DEFAULT_FRAME_SIZE
+        self.hop_size = self.frame_size // 2  # 50% overlap
         self.smoothing_alpha = DEFAULT_SMOOTHING_ALPHA
         self.n_average_samples = DEFAULT_N_AVERAGE_SAMPLES
         self.n_azimuth_cells = DEFAULT_N_AZIMUTH_CELLS
@@ -729,7 +730,9 @@ class SRPDemo(QMainWindow):
         self.streaming_srp = StreamingSrp(
             srp_processor=srp_processor,
             tracker=tracker,
-            frame_size=self.frame_size
+            frame_size=self.frame_size,
+            hop_size=self.hop_size,
+            window_func=np.hanning
         )
         
         # Initialize polar plot
@@ -774,7 +777,7 @@ class SRPDemo(QMainWindow):
                 rate=self.fs,
                 input=True,
                 input_device_index=device_index,
-                frames_per_buffer=self.frame_size,
+                frames_per_buffer=self.hop_size,
                 stream_callback=None
             )
             
@@ -784,7 +787,7 @@ class SRPDemo(QMainWindow):
             self.status_label.setText("Status: Recording...")
             
             # Start processing timer (process every frame)
-            self.timer.start(int(1000 * self.frame_size / self.fs))  # Update rate in ms
+            self.timer.start(int(1000 * self.hop_size / self.fs))  # Update rate in ms
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to start recording: {e}")
@@ -813,27 +816,28 @@ class SRPDemo(QMainWindow):
         
         try:
             # Read audio data
-            audio_data = self.stream.read(self.frame_size, exception_on_overflow=False)
+            audio_data = self.stream.read(self.hop_size, exception_on_overflow=False)
             
             # Convert to numpy array
-            audio_array = np.frombuffer(audio_data, dtype=np.int16)
-            audio_array = audio_array.astype(np.float32) / 32768.0  # Normalize to [-1, 1]
+            new_samples = np.frombuffer(audio_data, dtype=np.int16)
+            new_samples = new_samples.astype(np.float32) / 32768.0  # Normalize to [-1, 1]
             
-            # Reshape to (channels, samples)
-            # PyAudio delivers interleaved data: [c0s0, c1s0, c2s0, ... c0s1, c1s1, ...]
-            # So we must reshape to (samples, channels) then transpose
-            audio_array = audio_array.reshape(self.frame_size, self.device_channels).T
+            # Reshape to (hop_size, channels)
+            new_samples = new_samples.reshape(self.hop_size, self.device_channels)
 
+            # Transpose to (channels, samples) for processing
+            audio_chunk = new_samples.T
+            
             # Filter out ignored channels
             ignore_channels = self.config.get('ignore_channels', [])
             valid_channels = [i for i in range(self.device_channels) if i not in ignore_channels]
-            audio_frame = audio_array[valid_channels, :]
+            audio_chunk = audio_chunk[valid_channels, :]
             
             # Apply bandpass filter if enabled
             if self.filter_enabled:
                 try:
-                    audio_frame = apply_bandpass_filter(
-                        audio_frame,
+                    audio_chunk = apply_bandpass_filter(
+                        audio_chunk,
                         self.fs,
                         lowcut=self.filter_lowcut,
                         highcut=self.filter_highcut
@@ -841,9 +845,13 @@ class SRPDemo(QMainWindow):
                 except Exception as e:
                     print(f"Filter error: {e}")
             
-            # Process frame
-            srp_map, tracked_doa = self.streaming_srp.process_frame(audio_frame)
+            # Process chunk using internal buffer of StreamingSrp
+            srp_map, tracked_doa = self.streaming_srp.process_chunk(audio_chunk)
             
+            # If tracking/processing returned None (e.g. not enough data), skip update
+            if srp_map is None:
+                return
+
             # Subtract noise floor if available and enabled
             if self.noise_floor_enabled and self.noise_floor is not None:
                 srp_map = srp_map - self.noise_floor
