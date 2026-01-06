@@ -8,8 +8,53 @@ from .conventional_srp import ConventionalSrp
 from .signal_features.preprocessing import apply_bandpass_filter
 
 
+def calculate_aliasing_limit(mic_positions: np.ndarray, c: float = 343.0, margin: float = 0.9) -> Optional[int]:
+    """Calculate the spatial aliasing frequency limit for a microphone array.
+    
+    Aliasing occurs when the wavelength is smaller than 2 * minimum_distance.
+    f < c / (2 * d_min)
+    
+    Parameters
+    ----------
+    mic_positions : np.ndarray
+        Microphone positions of shape (n_mics, 3) or (n_mics, 2)
+    c : float
+        Speed of sound in m/s (default 343.0)
+    margin : float
+        Safety margin factor to apply to the limit (default 0.9)
+        
+    Returns
+    -------
+    int or None
+        Suggested frequency limit in Hz, or None if not enough microphones
+    """
+    if len(mic_positions) < 2:
+        return None
+        
+    # Calculate minimum pairwise distance
+    dists = []
+    for i in range(len(mic_positions)):
+        for j in range(i + 1, len(mic_positions)):
+            dist = np.linalg.norm(mic_positions[i] - mic_positions[j])
+            if dist > 0:
+                dists.append(dist)
+    
+    if not dists:
+        return None
+        
+    min_dist = min(dists)
+    
+    # Aliasing limit: f < c / (2 * d)
+    aliasing_freq = c / (2 * min_dist)
+    
+    # Apply safety margin
+    suggested_limit = int(aliasing_freq * margin)
+    
+    return suggested_limit
+
+
 def compute_noise_floor(
-    mic_positions: np.ndarray,
+    mic_positions: Optional[np.ndarray] = None,
     fs: int = 16000,
     frame_size: int = 1024,
     duration_seconds: float = 5.0,
@@ -23,14 +68,16 @@ def compute_noise_floor(
     progress_callback: Optional[callable] = None,
     filter_enabled: bool = True,
     filter_lowcut: float = 100.0,
-    filter_highcut: float = 7000.0
+    filter_highcut: float = 7000.0,
+    srp_processor: Optional[ConventionalSrp] = None,
+    frequency_weighting: Optional[str] = None
 ) -> np.ndarray:
     """Compute noise floor by averaging SRP maps from silent environment.
     
     Parameters
     ----------
-    mic_positions : np.ndarray
-        Microphone positions of shape (n_mics, n_dimensions)
+    mic_positions : np.ndarray, optional
+        Microphone positions of shape (n_mics, n_dimensions). Required if srp_processor is None.
     fs : int
         Sampling rate in Hz
     frame_size : int
@@ -59,6 +106,10 @@ def compute_noise_floor(
         High-pass cutoff frequency in Hz (default 100.0)
     filter_highcut : float, optional
         Low-pass cutoff frequency in Hz (default 7000.0)
+    srp_processor : ConventionalSrp, optional
+        Existing SRP processor to use. If provided, other SRP parameters are ignored.
+    frequency_weighting : str, optional
+        Frequency weighting method for 'gcc_phat_freq' mode (e.g., 'coherence').
     
     Returns
     -------
@@ -66,20 +117,25 @@ def compute_noise_floor(
         Averaged noise floor SRP map of shape (n_azimuth_cells,)
     """
     
-    # For 1D DOA grid, use 2D mic positions (x, y only)
-    mic_positions_2d = mic_positions[:, :2]
-    
-    # Create SRP processor
-    srp_processor = ConventionalSrp(
-        fs=fs,
-        grid_type="doa_1D",
-        n_grid_cells=n_azimuth_cells,
-        mic_positions=mic_positions_2d,
-        mode=mode,
-        interpolation=interpolation,
-        n_average_samples=n_average_samples,
-        sharpening=sharpening
-    )
+    if srp_processor is None:
+        if mic_positions is None:
+            raise ValueError("mic_positions must be provided if srp_processor is None")
+            
+        # For 1D DOA grid, use 2D mic positions (x, y only)
+        mic_positions_2d = mic_positions[:, :2] if mic_positions.shape[1] > 2 else mic_positions
+        
+        # Create SRP processor
+        srp_processor = ConventionalSrp(
+            fs=fs,
+            grid_type="doa_1D",
+            n_grid_cells=n_azimuth_cells,
+            mic_positions=mic_positions_2d,
+            mode=mode,
+            interpolation=interpolation,
+            n_average_samples=n_average_samples,
+            sharpening=sharpening,
+            frequency_weighting=frequency_weighting
+        )
     
     # Initialize audio
     audio = pyaudio.PyAudio()
@@ -228,4 +284,3 @@ def load_noise_floor(file_path: str) -> tuple[np.ndarray, dict]:
                 metadata[key] = f['metadata'][key][:]
     
     return noise_floor, metadata
-

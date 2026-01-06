@@ -16,10 +16,9 @@ from PyQt5.QtWidgets import (
 )
 
 # Local imports
-from xsrp.calibrate import compute_noise_floor, load_noise_floor, save_noise_floor
+from xsrp.calibrate import compute_noise_floor, load_noise_floor, save_noise_floor, calculate_aliasing_limit
 from xsrp.conventional_srp import ConventionalSrp
 from xsrp.grids import UniformSphericalGrid
-from xsrp.signal_features.preprocessing import apply_bandpass_filter
 from xsrp.streaming import StreamingSrp
 from xsrp.tracking import ExponentialSmoothingTracker
 from visualization.polar import plot_polar_srp_map
@@ -444,16 +443,22 @@ class SRPDemo(QMainWindow):
     def on_filter_enabled_changed(self, state):
         """Handle filter enabled checkbox change."""
         self.filter_enabled = state == Qt.Checked
+        if self.streaming_srp is not None:
+            self.streaming_srp.filter_enabled = self.filter_enabled
     
     def on_lowcut_changed(self, value):
         """Handle lowcut (high-pass) slider change."""
         self.filter_lowcut = float(value)
         self.lowcut_value_label.setText(str(value))
+        if self.streaming_srp is not None:
+            self.streaming_srp.filter_lowcut = self.filter_lowcut
     
     def on_highcut_changed(self, value):
         """Handle highcut (low-pass) slider change."""
         self.filter_highcut = float(value)
         self.highcut_value_label.setText(str(value))
+        if self.streaming_srp is not None:
+            self.streaming_srp.filter_highcut = self.filter_highcut
     
     def on_mode_changed(self, index):
         """Handle SRP mode selection change."""
@@ -574,18 +579,24 @@ class SRPDemo(QMainWindow):
         progress_dialog.show()
         QApplication.processEvents()
         
+        # Ensure SRP processor is initialized (uses current settings like mode, weighting, etc.)
+        if self.streaming_srp is None:
+            if not self.initialize_srp_processor():
+                progress_dialog.hide()
+                progress_dialog.deleteLater()
+                QMessageBox.warning(self, "Error", "Failed to initialize SRP processor for calibration")
+                return
+        
         try:
-            # Compute noise floor
+            # Compute noise floor using the current SRP processor configuration
             noise_floor = compute_noise_floor(
-                mic_positions=self.mic_positions,
+                srp_processor=self.streaming_srp.srp_processor,
                 fs=self.fs,
                 frame_size=self.frame_size,
                 duration_seconds=duration,
-                n_azimuth_cells=self.n_azimuth_cells,
-                n_average_samples=self.n_average_samples,
-                sharpening=self.sharpening,
-                mode="gcc_phat_time",
-                interpolation=True,
+                # These parameters are now derived from srp_processor if provided, 
+                # but we pass them for compatibility/safety or if they are needed for recording setup
+                n_azimuth_cells=self.n_azimuth_cells, 
                 device_index=device_index,
                 ignore_channels=self.config.get('ignore_channels', []),
                 progress_callback=lambda current, total: QApplication.processEvents(),
@@ -657,7 +668,22 @@ class SRPDemo(QMainWindow):
             ])
             
             self.config_label.setText(f"Config: {Path(config_path).name}")
-            self.status_label.setText(f"Status: Config loaded ({len(mic_angles)} microphones)")
+            
+            # Check for spatial aliasing and adjust filter
+            status_msg = f"Status: Config loaded ({len(mic_angles)} microphones)"
+            
+            suggested_limit = calculate_aliasing_limit(self.mic_positions)
+            
+            if suggested_limit is not None:
+                # Clamp to slider range
+                suggested_limit = max(HIGHCUT_SLIDER_MIN, min(suggested_limit, HIGHCUT_SLIDER_MAX))
+                
+                # If current setting is too high, lower it
+                if suggested_limit < self.highcut_slider.value():
+                    self.highcut_slider.setValue(suggested_limit)
+                    status_msg = f"Status: Filter set to {suggested_limit}Hz to prevent spatial aliasing"
+            
+            self.status_label.setText(status_msg)
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load config: {e}")
@@ -732,7 +758,11 @@ class SRPDemo(QMainWindow):
             tracker=tracker,
             frame_size=self.frame_size,
             hop_size=self.hop_size,
-            window_func=np.hanning
+            window_func=np.hanning,
+            fs=self.fs,
+            filter_enabled=self.filter_enabled,
+            filter_lowcut=self.filter_lowcut,
+            filter_highcut=self.filter_highcut
         )
         
         # Initialize polar plot
@@ -833,19 +863,7 @@ class SRPDemo(QMainWindow):
             valid_channels = [i for i in range(self.device_channels) if i not in ignore_channels]
             audio_chunk = audio_chunk[valid_channels, :]
             
-            # Apply bandpass filter if enabled
-            if self.filter_enabled:
-                try:
-                    audio_chunk = apply_bandpass_filter(
-                        audio_chunk,
-                        self.fs,
-                        lowcut=self.filter_lowcut,
-                        highcut=self.filter_highcut
-                    )
-                except Exception as e:
-                    print(f"Filter error: {e}")
-            
-            # Process chunk using internal buffer of StreamingSrp
+            # Process chunk using internal buffer of StreamingSrp (filtering handled internally)
             srp_map, tracked_doa = self.streaming_srp.process_chunk(audio_chunk)
             
             # If tracking/processing returned None (e.g. not enough data), skip update
