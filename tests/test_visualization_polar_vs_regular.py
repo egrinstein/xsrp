@@ -5,7 +5,7 @@ import pyroomacoustics as pra
 import soundfile as sf
 
 from visualization.polar import plot_polar_srp_map
-from xsrp.conventional_srp import ConventionalSrp
+from xsrp.xsrp import XSrp
 
 
 def plot_regular_srp_map(
@@ -113,7 +113,7 @@ def test_visualize_polar_vs_regular():
     
     # Create SRP processor
     n_azimuth_cells = 360  # 1 degree resolution
-    srp_processor = ConventionalSrp(
+    srp_processor = XSrp(
         fs=fs,
         grid_type="doa_1D",
         n_grid_cells=n_azimuth_cells,
@@ -197,7 +197,7 @@ def test_visualize_polar_vs_regular_with_weighting():
     
     # Test with coherence weighting
     n_azimuth_cells = 360
-    srp_processor = ConventionalSrp(
+    srp_processor = XSrp(
         fs=fs,
         grid_type="doa_1D",
         n_grid_cells=n_azimuth_cells,

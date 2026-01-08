@@ -4,7 +4,7 @@ import h5py
 from pathlib import Path
 from typing import Optional
 
-from .conventional_srp import ConventionalSrp
+from .xsrp import XSrp
 from .signal_features.preprocessing import apply_bandpass_filter
 
 
@@ -146,7 +146,7 @@ def record_ambient_noise(
 
 def compute_noise_floor_map(
     audio_data: np.ndarray,
-    srp_processor: ConventionalSrp,
+    srp_processor: XSrp,
     frame_size: int = 1024,
     hop_size: int = 512,
     fs: float = 16000,
@@ -162,7 +162,7 @@ def compute_noise_floor_map(
     ----------
     audio_data : np.ndarray
         Raw audio data of shape (n_samples, n_channels)
-    srp_processor : ConventionalSrp
+    srp_processor : XSrp
         Configured SRP processor to use
     frame_size : int
         Processing frame size

@@ -5,7 +5,7 @@ import pyroomacoustics as pra
 import soundfile as sf
 
 from visualization.polar import plot_polar_srp_map
-from xsrp.conventional_srp import ConventionalSrp
+from xsrp.xsrp import XSrp
 
 
 def test_visualize_frequency_weighting_comparison():
@@ -59,7 +59,7 @@ def test_visualize_frequency_weighting_comparison():
         ax = axs[idx]
         
         # Create SRP processor with frequency weighting
-        srp_processor = ConventionalSrp(
+        srp_processor = XSrp(
             fs=fs,
             grid_type="doa_1D",
             n_grid_cells=n_azimuth_cells,
@@ -145,7 +145,7 @@ def test_visualize_frequency_weighting_comparison_reverb():
         ax = axs[idx]
         
         # Create SRP processor with frequency weighting
-        srp_processor = ConventionalSrp(
+        srp_processor = XSrp(
             fs=fs,
             grid_type="doa_1D",
             n_grid_cells=n_azimuth_cells,

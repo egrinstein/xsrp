@@ -1,5 +1,5 @@
 test:
 	@uv run pytest
 
-demo:
-	@uv run demo.py
+gui:
+	@uv run gui.py

@@ -21,7 +21,7 @@ from xsrp.calibrate import (
     save_ambient_noise, load_ambient_noise,
     calculate_aliasing_limit
 )
-from xsrp.conventional_srp import ConventionalSrp
+from xsrp.xsrp import XSrp
 from xsrp.grids import UniformSphericalGrid
 from xsrp.streaming import StreamingSrp
 from xsrp.tracking import ExponentialSmoothingTracker
@@ -41,7 +41,7 @@ DEFAULT_SRP_MODE = "gcc_phat_freq"
 DEFAULT_FREQUENCY_WEIGHTING = None
 
 # UI Constants
-WINDOW_TITLE = "Real-time SRP Demo"
+WINDOW_TITLE = "Real-time SRP GUI"
 WINDOW_X = 100
 WINDOW_Y = 100
 WINDOW_WIDTH = 1000
@@ -113,8 +113,8 @@ class PolarPlotWidget(QWidget):
         self.canvas.draw()
 
 
-class SRPDemo(QMainWindow):
-    """Main GUI application for real-time SRP demo."""
+class SRPGUI(QMainWindow):
+    """Main GUI application for real-time SRP."""
     
     def __init__(self):
         super().__init__()
@@ -905,7 +905,7 @@ class SRPDemo(QMainWindow):
         # Frequency weighting only applies in frequency domain mode
         frequency_weighting = self.frequency_weighting if self.srp_mode == "gcc_phat_freq" else None
         
-        srp_processor = ConventionalSrp(
+        srp_processor = XSrp(
             fs=self.fs,
             grid_type="doa_1D",
             n_grid_cells=self.n_azimuth_cells,
@@ -1146,7 +1146,7 @@ class SRPDemo(QMainWindow):
 def main():
     """Main entry point."""
     app = QApplication(sys.argv)
-    window = SRPDemo()
+    window = SRPGUI()
     window.show()
     sys.exit(app.exec_())
 

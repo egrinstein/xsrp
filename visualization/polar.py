@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
 import numpy as np
 from xsrp.grids import UniformSphericalGrid
 
@@ -88,11 +87,16 @@ def plot_polar_srp_map(
                                  color=line_color, 
                                  lw=2.5))
         
-        # Create a proxy line for the legend (to represent the arrow)
-        arrow_proxy = mlines.Line2D([], [], color=line_color, linewidth=2.5,
-                                    marker='>', markersize=10, linestyle='-',
-                                    label='Tracked position')
-        ax.legend(handles=[arrow_proxy])
+        # Add angle value text right above the arrow tip
+        azimuth_deg = np.degrees(azimuth_tracked)
+        # Normalize to 0-360 range for display
+        if azimuth_deg < 0:
+            azimuth_deg += 360
+        # Position text slightly above the arrow tip
+        text_radius = srp_value * 1.1  # 10% above the arrow tip
+        ax.text(azimuth_tracked, text_radius, f'{azimuth_deg:.1f}°',
+               color=line_color, fontsize=10, fontweight='bold',
+               ha='center', va='bottom')
     
     if show:
         plt.tight_layout()

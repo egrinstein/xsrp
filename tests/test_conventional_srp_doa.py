@@ -8,7 +8,7 @@ from visualization.grids import (
     plot_azimuth_elevation_grid
 )
 from visualization.polar import plot_polar_srp_map
-from xsrp.conventional_srp import ConventionalSrp
+from xsrp.xsrp import XSrp
 
 
 def test_doa_2d_clean():
@@ -55,7 +55,7 @@ def test_doa_2d_clean():
     signals = room.mic_array.signals[:, :fs]
 
     # Create SRP processor for 1D DOA (azimuth only)
-    srp_func = ConventionalSrp(fs, "doa_1D", 360,
+    srp_func = XSrp(fs, "doa_1D", 360,
         mic_positions=mic_positions_relative, interpolation=False,
         mode="gcc_phat_freq",
         n_average_samples=5, freq_cutoff_in_hz=None)
@@ -89,7 +89,7 @@ def test_doa_3d_clean():
         signals,
     ) = base_scenario = _simulate_3d(interferer=False)
 
-    srp_func = ConventionalSrp(fs, "doa_2D", 200,
+    srp_func = XSrp(fs, "doa_2D", 200,
         mic_positions=mic_positions_relative, interpolation=False,
         mode="gcc_phat_freq",
         n_average_samples=5, freq_cutoff_in_hz=None)

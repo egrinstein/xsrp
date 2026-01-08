@@ -54,7 +54,7 @@ class StreamingSrp:
             self.window = None
         
         # Validate that SRP processor is configured for DOA
-        # Check if grid_type attribute exists (for ConventionalSrp and subclasses)
+        # Check if grid_type attribute exists (for XSrp and subclasses)
         if hasattr(srp_processor, 'grid_type'):
             if srp_processor.grid_type not in ["doa_1D", "doa_2D"]:
                 raise ValueError(

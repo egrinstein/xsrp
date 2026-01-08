@@ -5,6 +5,27 @@ This repository contains the code for the paper:
 [Steered Response Power for Sound Source Localization: A Tutorial Review
 ](https://arxiv.org/abs/2405.02991)
 
+![GUI Demo](docs/gui.gif)
+
+## GUI Application
+
+The repository includes a real-time GUI application for interactive sound source localization. The GUI provides:
+
+- **Real-time polar visualization**: Live polar plots showing SRP maps and detected source directions
+- **Interactive controls**: Adjustable parameters including smoothing speed, averaging samples, angular resolution, and SRP map sharpening
+- **Bandpass filtering**: Configurable high-pass and low-pass filters for preprocessing
+- **SRP mode selection**: Choose between time-domain and frequency-domain SRP-PHAT processing
+- **Frequency weighting**: Optional frequency-domain weighting methods (coherence, sparsity, PAR) for improved source detection
+- **Noise floor calibration**: Record and subtract ambient noise for improved source detection
+- **Microphone configuration**: Load microphone array configurations from YAML files
+- **Exponential smoothing tracker**: Temporal smoothing of DOA estimates to reduce jitter
+
+To run the GUI:
+
+```bash
+uv run python gui.py
+```
+
 ## The following functionality is currently implemented:
 
 ### Core SRP Algorithms
