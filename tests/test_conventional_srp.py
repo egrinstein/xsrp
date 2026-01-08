@@ -4,7 +4,7 @@ import os
 import pyroomacoustics as pra
 
 from visualization.grids import plot_uniform_cartesian_grid
-from xsrp.conventional_srp import ConventionalSrp
+from xsrp.xsrp import XSrp
 
 
 def test_compare_averaging():
@@ -12,10 +12,10 @@ def test_compare_averaging():
 
     fs, room_dims, mic_positions, source_position, signals = _simulate()
 
-    dibiase_srp_no_avg = ConventionalSrp(fs, "2D", 50,
+    dibiase_srp_no_avg = XSrp(fs, "2D", 50,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=True,
         n_average_samples=1)
-    dibiase_srp_avg = ConventionalSrp(fs, "2D", 50,
+    dibiase_srp_avg = XSrp(fs, "2D", 50,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=True,
         n_average_samples=5)
     
@@ -47,9 +47,9 @@ def test_compare_interpolation():
 
     fs, room_dims, mic_positions, source_position, signals = _simulate()
 
-    dibiase_srp_no_avg = ConventionalSrp(fs, "2D", 50,
+    dibiase_srp_no_avg = XSrp(fs, "2D", 50,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=False)
-    dibiase_srp_avg = ConventionalSrp(fs, "2D", 50,
+    dibiase_srp_avg = XSrp(fs, "2D", 50,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=True)
     
     estimated_positions, srp_map, candidate_grid = dibiase_srp_no_avg.forward(signals)
@@ -81,13 +81,13 @@ def test_compare_gcc_and_cc():
     fs, room_dims, mic_positions, source_position, signals = _simulate()
     n_grid = 100
 
-    dibiase_srp_cc = ConventionalSrp(fs, "2D", n_grid,
+    dibiase_srp_cc = XSrp(fs, "2D", n_grid,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=False,
         mode="cross_correlation")
-    dibiase_srp_gcc = ConventionalSrp(fs, "2D", n_grid,
+    dibiase_srp_gcc = XSrp(fs, "2D", n_grid,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=False,
         mode="gcc_phat_time")
-    dibiase_srp_gcc_freq = ConventionalSrp(fs, "2D", n_grid,
+    dibiase_srp_gcc_freq = XSrp(fs, "2D", n_grid,
         mic_positions=mic_positions, room_dims=room_dims, interpolation=False,
         mode="gcc_phat_freq")
     

@@ -1,10 +1,10 @@
 import numpy as np
 
 
-from .conventional_srp import ConventionalSrp
+from .xsrp import XSrp
 
 
-class MultiSourceSrp(ConventionalSrp):
+class MultiSourceSrp(XSrp):
     def __init__(self, fs: float,
         grid_type, n_grid_cells,
         mic_positions=None, room_dims=None, c=343,

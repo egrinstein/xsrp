@@ -1,0 +1,9 @@
+name: "ReSpeaker 3.1"
+type: "circular"
+radius_mm: 35  # Array radius in millimeters (70mm diameter)
+microphones:
+  - angle_deg: 0      # Azimuth angle in degrees
+  - angle_deg: 90
+  - angle_deg: 180
+  - angle_deg: 270
+ignore_channels: [0, 5]  # Channel indices to ignore (0-indexed)
