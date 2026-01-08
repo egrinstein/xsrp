@@ -65,31 +65,94 @@ class UniformCartesianGrid(Grid):
         return positions
 
 class UniformSphericalGrid(Grid):
-    def __init__(self, n_azimuth_cells, n_elevation_cells=0):
+    def __init__(self, n_azimuth_cells, n_elevation_cells=0, 
+                 azimuth_min=None, azimuth_max=None,
+                 elevation_min=None, elevation_max=None):
+        """
+        Create a uniform spherical grid for DOA estimation.
+        
+        Parameters
+        ----------
+        n_azimuth_cells : int
+            Number of azimuth cells in the grid.
+        n_elevation_cells : int, optional
+            Number of elevation cells. If 0, creates a 1D DOA grid (azimuth only).
+            Defaults to 0.
+        azimuth_min : float, optional
+            Minimum azimuth angle in radians. If None, defaults to 0.
+        azimuth_max : float, optional
+            Maximum azimuth angle in radians. If None, defaults to 2*pi.
+        elevation_min : float, optional
+            Minimum elevation angle in radians. If None, defaults to 0.
+            Only used when n_elevation_cells > 0.
+        elevation_max : float, optional
+            Maximum elevation angle in radians. If None, defaults to pi.
+            Only used when n_elevation_cells > 0.
+        """
         self.n_azimuth_cells = n_azimuth_cells
         self.n_elevation_cells = n_elevation_cells
+        
+        # Set defaults for azimuth range
+        self.azimuth_min = azimuth_min if azimuth_min is not None else 0.0
+        self.azimuth_max = azimuth_max if azimuth_max is not None else 2 * np.pi
+        
+        # Set defaults for elevation range
+        self.elevation_min = elevation_min if elevation_min is not None else 0.0
+        self.elevation_max = elevation_max if elevation_max is not None else np.pi
+        
+        # Validate ranges
+        if self.azimuth_min >= self.azimuth_max:
+            raise ValueError(f"azimuth_min ({self.azimuth_min}) must be less than azimuth_max ({self.azimuth_max})")
+        if self.azimuth_min < 0 or self.azimuth_max > 2 * np.pi:
+            raise ValueError(f"Azimuth range must be within [0, 2*pi]. Got [{self.azimuth_min}, {self.azimuth_max}]")
+        
+        if self.n_elevation_cells > 0:
+            if self.elevation_min >= self.elevation_max:
+                raise ValueError(f"elevation_min ({self.elevation_min}) must be less than elevation_max ({self.elevation_max})")
+            if self.elevation_min < 0 or self.elevation_max > np.pi:
+                raise ValueError(f"Elevation range must be within [0, pi]. Got [{self.elevation_min}, {self.elevation_max}]")
 
         positions = self._create_grid()
 
         super().__init__(positions)
 
     def _create_grid(self):
-
+        # Generate full azimuth range, then filter
+        full_azimuth_range = np.linspace(0, 2 * np.pi, self.n_azimuth_cells, endpoint=False)
+        # Filter azimuth range based on min/max
+        azimuth_mask = (full_azimuth_range >= self.azimuth_min) & (full_azimuth_range < self.azimuth_max)
+        self.azimuth_range = full_azimuth_range[azimuth_mask]
+        n_azimuth_filtered = len(self.azimuth_range)
+        
+        if n_azimuth_filtered == 0:
+            raise ValueError(f"No azimuth cells in the specified range [{self.azimuth_min}, {self.azimuth_max})")
+        
         if self.n_elevation_cells == 0:
-            self.grid_shape = np.array([self.n_azimuth_cells, 2])
-        else:
-            self.grid_shape = np.array([self.n_azimuth_cells, self.n_elevation_cells, 3])
-
-        positions = np.zeros(self.grid_shape)
-
-        self.azimuth_range = np.linspace(0, 2 * np.pi, self.n_azimuth_cells, endpoint=False)
-        if self.n_elevation_cells == 0:
+            # 1D DOA grid (azimuth only)
+            self.grid_shape = np.array([n_azimuth_filtered, 2])
+            positions = np.zeros(self.grid_shape)
             for i, azimuth in enumerate(self.azimuth_range):
                 positions[i] = np.array([np.cos(azimuth), np.sin(azimuth)])
         else:
-            self.elevation_range = np.linspace(0, np.pi, self.n_elevation_cells, endpoint=False)
+            # 2D DOA grid (azimuth + elevation)
+            # Generate full elevation range, then filter
+            full_elevation_range = np.linspace(0, np.pi, self.n_elevation_cells, endpoint=False)
+            # Filter elevation range based on min/max
+            elevation_mask = (full_elevation_range >= self.elevation_min) & (full_elevation_range < self.elevation_max)
+            self.elevation_range = full_elevation_range[elevation_mask]
+            n_elevation_filtered = len(self.elevation_range)
+            
+            if n_elevation_filtered == 0:
+                raise ValueError(f"No elevation cells in the specified range [{self.elevation_min}, {self.elevation_max})")
+            
+            self.grid_shape = np.array([n_azimuth_filtered, n_elevation_filtered, 3])
+            positions = np.zeros(self.grid_shape)
             for i, azimuth in enumerate(self.azimuth_range):
                 for j, elevation in enumerate(self.elevation_range):
-                    positions[i, j] = np.array([np.cos(azimuth) * np.sin(elevation), np.sin(azimuth) * np.sin(elevation), np.cos(elevation)])
+                    positions[i, j] = np.array([
+                        np.cos(azimuth) * np.sin(elevation),
+                        np.sin(azimuth) * np.sin(elevation),
+                        np.cos(elevation)
+                    ])
 
         return positions
