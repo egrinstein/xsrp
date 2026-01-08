@@ -1,8 +1,17 @@
 import numpy as np
-import pyaudio
-import h5py
 from pathlib import Path
 from typing import Optional
+
+# Optional imports for GUI/calibration features
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
+
+try:
+    import h5py
+except ImportError:
+    h5py = None
 
 from .xsrp import XSrp
 from .signal_features.preprocessing import apply_bandpass_filter
@@ -79,7 +88,17 @@ def record_ambient_noise(
     -------
     np.ndarray
         Raw audio data of shape (n_samples, n_channels)
+    
+    Raises
+    ------
+    ImportError
+        If pyaudio is not installed. Install with: pip install xsrp[gui]
     """
+    if pyaudio is None:
+        raise ImportError(
+            "pyaudio is required for recording ambient noise. "
+            "Install it with: pip install xsrp[gui]"
+        )
     audio = pyaudio.PyAudio()
     
     try:
@@ -256,7 +275,17 @@ def save_ambient_noise(audio_data: np.ndarray, file_path: str, fs: int):
         Path to save
     fs : int
         Sampling rate
+    
+    Raises
+    ------
+    ImportError
+        If h5py is not installed. Install with: pip install xsrp[gui]
     """
+    if h5py is None:
+        raise ImportError(
+            "h5py is required for saving ambient noise. "
+            "Install it with: pip install xsrp[gui]"
+        )
     file_path = Path(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -277,7 +306,17 @@ def load_ambient_noise(file_path: str) -> tuple[Optional[np.ndarray], int]:
     -------
     tuple[np.ndarray, int]
         (audio_data, fs). audio_data may be None if file is old format.
+    
+    Raises
+    ------
+    ImportError
+        If h5py is not installed. Install with: pip install xsrp[gui]
     """
+    if h5py is None:
+        raise ImportError(
+            "h5py is required for loading ambient noise. "
+            "Install it with: pip install xsrp[gui]"
+        )
     file_path = Path(file_path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")

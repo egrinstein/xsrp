@@ -2,22 +2,58 @@
 name = "xsrp"
 version = "0.1.0"
 description = "eXtensible Steered Response Power for Sound Source Localization"
+readme = "readme.md"
 requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "XSRP Contributors"}
+]
+keywords = [
+    "sound-source-localization",
+    "srp",
+    "steered-response-power",
+    "doa",
+    "direction-of-arrival",
+    "audio-processing",
+    "signal-processing",
+    "microphone-array"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Multimedia :: Sound/Audio",
+]
 dependencies = [
     "numpy>=1.25.0",
     "scipy>=1.10.0",
-    "matplotlib>=3.7.0",
-    "pyroomacoustics>=0.7.3",
-    "soundfile>=0.12.1",
-    "pyaudio>=0.2.11",
+]
+
+[project.optional-dependencies]
+gui = [
     "PyQt5>=5.15.0",
+    "matplotlib>=3.7.0",
+    "pyaudio>=0.2.11",
     "pyyaml>=6.0",
     "h5py>=3.8.0",
 ]
 
+[project.scripts]
+xsrp-gui = "xsrp.gui:main"
+
 [build-system]
 requires = ["hatchling", "cython>=0.29.36", "pybind11>=2.10.4"]
 build-backend = "hatchling.build"
+
+[tool.hatchling.build.targets.wheel]
+packages = ["xsrp", "visualization"]
 
 [dependency-groups]
 dev = [

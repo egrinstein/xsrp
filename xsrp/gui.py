@@ -2,18 +2,24 @@
 import sys
 from pathlib import Path
 
-# Third-party imports
-import numpy as np
-import pyaudio
-import yaml
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
-    QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton, QSlider,
-    QVBoxLayout, QWidget
-)
+# Third-party imports - optional GUI dependencies
+try:
+    import numpy as np
+    import pyaudio
+    import yaml
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.figure import Figure
+    from PyQt5.QtCore import QTimer, Qt
+    from PyQt5.QtWidgets import (
+        QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout,
+        QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton, QSlider,
+        QVBoxLayout, QWidget
+    )
+except ImportError as e:
+    raise ImportError(
+        "GUI dependencies are not installed. Install them with: pip install xsrp[gui]\n"
+        f"Original error: {e}"
+    ) from e
 
 # Local imports
 from xsrp.calibrate import (
@@ -164,7 +170,7 @@ class SRPGUI(QMainWindow):
         self.init_ui()
         
         # Load default config
-        default_config_path = Path(__file__).parent / DEFAULT_CONFIG_DIR / DEFAULT_CONFIG_FILE
+        default_config_path = Path(__file__).parent.parent / DEFAULT_CONFIG_DIR / DEFAULT_CONFIG_FILE
         if default_config_path.exists():
             self.load_config(str(default_config_path))
         
@@ -557,7 +563,7 @@ class SRPGUI(QMainWindow):
     
     def get_noise_floor_path(self) -> Path:
         """Get the default path for noise floor file."""
-        return Path(__file__).parent / DEFAULT_NOISE_FLOOR_DIR / DEFAULT_NOISE_FLOOR_FILE
+        return Path(__file__).parent.parent / DEFAULT_NOISE_FLOOR_DIR / DEFAULT_NOISE_FLOOR_FILE
     
     def load_noise_floor_auto(self):
         """Automatically load noise floor if it exists."""
@@ -584,7 +590,7 @@ class SRPGUI(QMainWindow):
     
     def load_noise_floor_dialog(self):
         """Open dialog to load noise floor file."""
-        default_path = Path(__file__).parent / DEFAULT_NOISE_FLOOR_DIR
+        default_path = Path(__file__).parent.parent / DEFAULT_NOISE_FLOOR_DIR
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Noise Floor",
@@ -797,7 +803,7 @@ class SRPGUI(QMainWindow):
     
     def load_config_dialog(self):
         """Open dialog to load microphone configuration file."""
-        default_path = Path(__file__).parent / DEFAULT_CONFIG_DIR
+        default_path = Path(__file__).parent.parent / DEFAULT_CONFIG_DIR
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Microphone Configuration",
