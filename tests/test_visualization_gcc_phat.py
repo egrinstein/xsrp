@@ -3,7 +3,7 @@ import numpy as np
 import os
 import soundfile as sf
 
-from visualization.cross_correlation import (
+from xsrp.visualization.cross_correlation import (
     plot_cross_correlation
 )
 from xsrp.signal_features.cross_correlation import cross_correlation

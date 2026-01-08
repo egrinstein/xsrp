@@ -4,10 +4,10 @@ import os
 import pyroomacoustics as pra
 import soundfile as sf
 
-from visualization.grids import (
+from xsrp.visualization.grids import (
     plot_azimuth_elevation_grid
 )
-from visualization.polar import plot_polar_srp_map
+from xsrp.visualization.polar import plot_polar_srp_map
 from xsrp.xsrp import XSrp
 
 

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import pyroomacoustics as pra
 
-from visualization.grids import plot_uniform_cartesian_grid
+from xsrp.visualization.grids import plot_uniform_cartesian_grid
 from xsrp.xsrp import XSrp
 
 

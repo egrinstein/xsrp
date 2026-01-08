@@ -31,7 +31,7 @@ from xsrp.xsrp import XSrp
 from xsrp.grids import UniformSphericalGrid
 from xsrp.streaming import StreamingSrp
 from xsrp.tracking import ExponentialSmoothingTracker
-from visualization.polar import plot_polar_srp_map
+from xsrp.visualization.polar import plot_polar_srp_map
 
 # Constants
 DEFAULT_SAMPLING_RATE = 16000

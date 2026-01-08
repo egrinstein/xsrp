@@ -52,8 +52,6 @@ xsrp-gui = "xsrp.gui:main"
 requires = ["hatchling", "cython>=0.29.36", "pybind11>=2.10.4"]
 build-backend = "hatchling.build"
 
-[tool.hatchling.build.targets.wheel]
-packages = ["xsrp", "visualization"]
 
 [dependency-groups]
 dev = [

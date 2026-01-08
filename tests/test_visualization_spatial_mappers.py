@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-from visualization.spatial_mappers import (
+from xsrp.visualization.spatial_mappers import (
     plot_pairwise_mapper,
 )
 from xsrp.grids import (

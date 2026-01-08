@@ -4,7 +4,7 @@ import os
 import pyroomacoustics as pra
 import soundfile as sf
 
-from visualization.polar import plot_polar_srp_map
+from xsrp.visualization.polar import plot_polar_srp_map
 from xsrp.xsrp import XSrp
 
 
