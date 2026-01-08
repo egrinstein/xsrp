@@ -23,7 +23,11 @@ The repository includes a real-time GUI application for interactive sound source
 To run the GUI:
 
 ```bash
-uv run python gui.py
+# If installed via pip with GUI extras:
+xsrp-gui
+
+# Or during development:
+uv run python -m xsrp.gui
 ```
 
 ## The following functionality is currently implemented:
@@ -63,6 +67,25 @@ Frequency-domain weighting methods for narrowband SRP maps (available in frequen
 
 ## Installation
 
+### From PyPI
+
+Install the core package:
+```bash
+pip install xsrp
+```
+
+Install with GUI support (includes PyQt5, matplotlib, pyaudio, etc.):
+```bash
+pip install xsrp[gui]
+```
+
+After installing with GUI support, you can run the GUI application:
+```bash
+xsrp-gui
+```
+
+### Development Installation
+
 We recommend using [uv](https://github.com/astral-sh/uv) for dependency management. Change directory to the ```xsrp``` folder and run the following commands:
 
 1. Install uv (if not already installed): `curl -LsSf https://astral.sh/uv/install.sh | sh`
@@ -74,4 +97,9 @@ You can then optionally run the tests to verify that everything is working corre
 4. `uv run pytest tests` (or `make test`)
 
 You may want to check the images that were generated in the ```tests/temp``` folder.
+
+To run the GUI during development:
+```bash
+uv run python -m xsrp.gui
+```
 
